@@ -1,5 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import Response
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import os
@@ -37,6 +36,7 @@ async def startup_event():
     print(f"Server started. Monitoring {INPUT_DIR}")
 
 # Mount Static Files (CSS, JS)
+# We will create the 'static' folder later for the frontend
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.mount("/thumbnails", StaticFiles(directory=THUMBNAIL_DIR), name="thumbnails")
 
@@ -53,7 +53,7 @@ def read_root():
 def scan_input_folder():
     """
     Triggers a scan of the 'Input' folder.
-    Returns the count of new files found.
+    Returns the count of new files found and total staged files.
     """
     result = scanner.scan_input_directory(INPUT_DIR)
     return result
@@ -70,6 +70,7 @@ def get_staged_files(db: Session = Depends(get_db)):
 def get_staged_cover(file_id: int, db: Session = Depends(get_db)):
     """
     Extracts the first image from a staged ZIP file and serves it directly.
+    This allows the UI to show a preview without extracting the whole comic.
     """
     staged_file = db.query(database.StagedFile).filter(database.StagedFile.id == file_id).first()
     
@@ -79,16 +80,16 @@ def get_staged_cover(file_id: int, db: Session = Depends(get_db)):
     image_data = scanner.get_cover_from_zip(staged_file.path)
     
     if image_data:
-        # Return the bytes as a JPEG (or we could detect PNG)
+        # We assume JPEG for now, but browsers are smart enough to handle PNGs sent as image/jpeg usually.
+        # Ideally, we would detect the mime type, but this is sufficient for a prototype.
         return Response(content=image_data, media_type="image/jpeg")
     else:
-        # Return a placeholder or 404 if zip is empty
         raise HTTPException(status_code=404, detail="No images found in archive")
 
 @app.get("/api/library")
 def get_library(db: Session = Depends(get_db)):
     """
-    Returns the main library galleries.
+    Returns the main library galleries (Already imported).
     """
     galleries = db.query(database.Gallery).all()
     return galleries
