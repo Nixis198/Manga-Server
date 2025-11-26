@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Manga Server{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <nav>
+        <div class="brand">MangaServer</div>
+        <div class="links">
+            <a href="/">Library</a>
+            <a href="/staging">Import <span id="nav-count" class="badge" style="display:none">0</span></a>
+            <a href="/settings">Settings</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+        async function checkScan() {
+            // Poll the scanner count to update the notification badge
+            try {
+                const response = await fetch('/api/scan', { method: 'POST' });
+                const data = await response.json();
+                const badge = document.getElementById('nav-count');
+                if (data.total_staged > 0) {
+                    badge.innerText = data.total_staged;
+                    badge.style.display = 'inline-block';
+                    badge.classList.add('status-new');
+                } else {
+                    badge.style.display = 'none';
+                }
+            } catch (e) { console.log("Scanner check failed"); }
+        }
+        // Check on load
+        checkScan();
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

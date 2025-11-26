@@ -1,11 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, Response
+from fastapi import FastAPI, Depends, HTTPException, Response, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
 
 # Import our local modules
-from . import database
-from .services import scanner
+from . import database, schemas
+from .services import scanner, importer
 
 # Configuration
 DATA_DIR = os.getenv("DATA_DIR", "./data")
@@ -40,14 +41,20 @@ async def startup_event():
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.mount("/thumbnails", StaticFiles(directory=THUMBNAIL_DIR), name="thumbnails")
 
+# Initialize Templates
+templates = Jinja2Templates(directory="app/templates")
+
 # --- API Endpoints ---
 
 @app.get("/")
-def read_root():
-    return {
-        "status": "Manga Server is running", 
-        "endpoints": ["/api/scan", "/api/staged", "/api/library"]
-    }
+def read_root(request: Request, db: Session = Depends(get_db)):
+    # Fetch all galleries
+    galleries = db.query(database.Gallery).all()
+    # Render the library.html template
+    return templates.TemplateResponse("library.html", {
+        "request": request, 
+        "galleries": galleries
+    })
 
 @app.post("/api/scan")
 def scan_input_folder():
@@ -93,3 +100,16 @@ def get_library(db: Session = Depends(get_db)):
     """
     galleries = db.query(database.Gallery).all()
     return galleries
+
+@app.post("/api/import/{staged_id}")
+def import_comic(staged_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
+    """
+    Moves a file from Staging to Library with the provided metadata.
+    """
+    try:
+        gallery = importer.import_gallery(db, staged_id, request, DATA_DIR)
+        return {"status": "success", "gallery_id": gallery.id, "title": gallery.title}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

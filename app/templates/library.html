@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
+        <h1>Library</h1>
+        <input type="text" id="search" placeholder="Search title, artist..." 
+               style="padding: 10px; border-radius: 5px; border: 1px solid #555; background: #333; color: white; width: 300px;">
+    </div>
+
+    <div class="grid" id="gallery-grid">
+        {% for gallery in galleries %}
+        <div class="card" onclick="window.location.href='/reader/{{ gallery.id }}'">
+            <img src="/thumbnails/{{ gallery.id }}.jpg" loading="lazy" alt="Cover">
+            <div class="card-body">
+                <span class="badge status-{{ gallery.status|lower }}">{{ gallery.status }}</span>
+                <div class="card-title" title="{{ gallery.title }}">{{ gallery.title }}</div>
+                <div class="card-artist">{{ gallery.artist }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        document.getElementById('search').addEventListener('keyup', function(e) {
+            const term = e.target.value.toLowerCase();
+            const cards = document.querySelectorAll('.card');
+            
+            cards.forEach(card => {
+                const title = card.querySelector('.card-title').innerText.toLowerCase();
+                const artist = card.querySelector('.card-artist').innerText.toLowerCase();
+                if (title.includes(term) || artist.includes(term)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        });
+    </script>
+{% endblock %}
