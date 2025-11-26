@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  manga-server:
+    build: .
+    container_name: manga_server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app       # Hot-reload for development
+      - ./data:/app/data     # Persistent storage for DB and Comics
+    environment:
+      - DATA_DIR=/app/data
+    restart: unless-stopped
