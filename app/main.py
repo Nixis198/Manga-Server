@@ -551,3 +551,29 @@ async def restore_database(file: UploadFile = File(...), db: Session = Depends(g
         logger.error(f"Restore failed: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
+    
+    # --- UPLOAD API ---
+@app.get("/upload")
+def upload_page(request: Request):
+    return templates.TemplateResponse("upload.html", {"request": request})
+
+@app.post("/api/upload")
+async def upload_gallery(file: UploadFile = File(...)):
+    """
+    Receives a file and streams it to the Input folder.
+    """
+    try:
+        # Security check: Ensure it's a zip/cbz
+        if not file.filename.lower().endswith(('.zip', '.cbz')): # type: ignore
+            raise HTTPException(status_code=400, detail="Only .zip and .cbz files are allowed.")
+        
+        file_location = os.path.join(INPUT_DIR, file.filename) # type: ignore
+        
+        # Write file to disk in chunks (memory efficient)
+        with open(file_location, "wb+") as file_object:
+            shutil.copyfileobj(file.file, file_object)
+            
+        return {"filename": file.filename, "status": "success"}
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")

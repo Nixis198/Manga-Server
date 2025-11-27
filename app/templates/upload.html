@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Galleries{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <div class="settings-panel" style="width: 100%;">
+        <h2>Upload Galleries</h2>
+        <div class="help-text">Supported formats: .zip, .cbz</div>
+
+        <div id="drop-zone" class="drop-zone">
+            <p>Drag & Drop files here</p>
+            <p>or</p>
+            <button class="btn-small" onclick="document.getElementById('file-input').click()">Select Files</button>
+            <input type="file" id="file-input" multiple style="display: none;" onchange="handleFiles(this.files)">
+        </div>
+
+        <div id="upload-queue" class="upload-queue">
+            </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const dropZone = document.getElementById('drop-zone');
+
+    // Drag & Drop Visuals
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    function handleFiles(files) {
+        for (let i = 0; i < files.length; i++) {
+            uploadFile(files[i]);
+        }
+    }
+
+    function uploadFile(file) {
+        // 1. Create UI Element
+        const queue = document.getElementById('upload-queue');
+        const item = document.createElement('div');
+        item.className = 'queue-item';
+        
+        item.innerHTML = `
+            <div class="queue-info">
+                <span class="queue-name">${file.name}</span>
+                <span class="queue-status">Waiting...</span>
+            </div>
+            <div class="progress-bg">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+        `;
+        queue.appendChild(item);
+
+        const statusText = item.querySelector('.queue-status');
+        const progressBar = item.querySelector('.progress-fill');
+
+        // 2. Prepare Upload
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/upload", true);
+
+        // 3. Track Progress
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percent = (e.loaded / e.total) * 100;
+                progressBar.style.width = percent + "%";
+                statusText.innerText = Math.round(percent) + "%";
+            }
+        };
+
+        // 4. Handle Completion
+        xhr.onload = () => {
+            if (xhr.status === 200) {
+                statusText.innerText = "Done";
+                statusText.style.color = "#2ecc71";
+                progressBar.style.backgroundColor = "#2ecc71";
+            } else {
+                statusText.innerText = "Error";
+                statusText.style.color = "#e74c3c";
+                progressBar.style.backgroundColor = "#e74c3c";
+            }
+        };
+
+        xhr.onerror = () => {
+            statusText.innerText = "Failed";
+            statusText.style.color = "#e74c3c";
+        };
+
+        xhr.send(formData);
+    }
+</script>
+{% endblock %}
