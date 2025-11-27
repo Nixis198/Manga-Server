@@ -136,3 +136,27 @@ def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)
         "request": request, 
         "gallery": gallery
     })
+
+@app.post("/api/progress/{gallery_id}/{page}")
+def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
+    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    
+    # Update Page
+    # The IDE complains because it sees a 'Column' object, not an 'int'.
+    # We add '# type: ignore' to silence this specific error.
+    gallery.pages_read = page # type: ignore
+    
+    # Update Status Logic
+    total = gallery.pages_total # type: ignore
+    
+    if total and page >= total: # type: ignore
+        gallery.status = "Completed" # type: ignore
+    elif page > 1:
+        gallery.status = "Reading" # type: ignore
+    else:
+        gallery.status = "New" # type: ignore
+        
+    db.commit()
+    return {"status": "updated", "current_status": gallery.status}

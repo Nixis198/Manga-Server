@@ -50,8 +50,8 @@
                         <div class="form-group">
                             <label>Reading Direction</label>
                             <select id="inp_direction">
-                                <option value="RTL">Manga (Right to Left)</option>
-                                <option value="LTR">Comic (Left to Right)</option>
+                                <option value="LTR" selected>Left to Right</option>
+                                <option value="RTL">Right to Left</option>
                             </select>
                         </div>
                     </div>
@@ -105,22 +105,31 @@
 <script>
     let currentFiles = [];
 
-    // 1. Load Files on Page Load & Update Badge
+    // 1. Load Files on Page Load
     async function loadFiles() {
         const res = await fetch('/api/staged');
         currentFiles = await res.json();
+        
         renderList();
 
-        // --- NEW: Update the Navigation Badge ---
+        // Update Badge
         const badge = document.getElementById('nav-count');
         const count = currentFiles.length;
-        
         if (count > 0) {
             badge.innerText = count;
             badge.style.display = 'inline-block';
             badge.classList.add('status-new'); 
         } else {
             badge.style.display = 'none';
+        }
+
+        // NEW: Auto-select the first file if files exist
+        if (currentFiles.length > 0) {
+            selectFile(currentFiles[0]);
+        } else {
+            // If list is empty, hide editor
+            document.getElementById('editor-panel').style.display = 'none';
+            document.getElementById('empty-state').style.display = 'flex';
         }
     }
 
@@ -147,6 +156,8 @@
             const item = document.createElement('div');
             item.className = 'list-item';
             item.innerText = file.filename;
+            // Add ID so we can highlight active one
+            item.id = `file-item-${file.id}`; 
             item.onclick = () => selectFile(file);
             list.appendChild(item);
         });
@@ -162,7 +173,7 @@
         document.getElementById('staged_id').value = file.id;
         document.getElementById('file-name-display').innerText = file.filename;
         
-        // Auto-fill from guess
+        // Auto-fill form
         document.getElementById('inp_title').value = file.suggested_title || "";
         document.getElementById('inp_artist').value = file.suggested_artist || "";
         
@@ -171,7 +182,8 @@
 
         // Highlight selected in list
         document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
-        event.target.classList.add('active');
+        const activeItem = document.getElementById(`file-item-${file.id}`);
+        if(activeItem) activeItem.classList.add('active');
     }
 
     // NEW: Plugin Logic

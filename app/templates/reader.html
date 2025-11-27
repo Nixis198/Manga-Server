@@ -80,6 +80,7 @@
     data-gallery-id="{{ gallery.id }}"
     data-direction="{{ gallery.reading_direction }}"
     data-total-pages="{{ gallery.pages_total if gallery.pages_total else 999 }}"
+    data-current-page="{{ gallery.pages_read }}"
 >
 
     <header>
@@ -114,19 +115,31 @@
     </div>
 
     <script>
-        // CONFIG: Read from the body tags instead of direct injection
+        // CONFIG
         const data = document.body.dataset;
         const GALLERY_ID = parseInt(data.galleryId);
         const DIRECTION = data.direction; 
-        let totalPages = parseInt(data.totalPages);
+        let totalPages = parseInt(data.totalPages) || 1;
         
-        let currentPage = 1;
+        // RESUME LOGIC
+        let savedPage = parseInt(data.currentPage) || 0;
+        // Default to page 1
+        let startPage = 1; 
+
+        // If we have started reading, AND we haven't finished it yet, resume.
+        // If savedPage == totalPages, we assume you finished it and want to re-read from the start.
+        if (savedPage > 0 && savedPage < totalPages) {
+            startPage = savedPage;
+        }
+        
+        let currentPage = startPage;
 
         // LOAD SAVED SETTINGS
         let settings = JSON.parse(localStorage.getItem('readerSettings')) || { fit: 'height' };
         document.getElementById('fit-mode').value = settings.fit;
 
         function applySettings() {
+             // ... (Keep existing applySettings logic) ...
             const fit = document.getElementById('fit-mode').value;
             const img = document.getElementById('page-img');
             
@@ -140,24 +153,28 @@
                 img.style.width = 'auto';
                 img.style.height = 'auto';
             }
-
-            // Save
             settings.fit = fit;
             localStorage.setItem('readerSettings', JSON.stringify(settings));
         }
 
-        function loadPage(num) {
+        async function loadPage(num) {
+            // ... (Keep existing loadPage logic) ...
             if (num < 1) return;
-            // Optimistic update
+            if (num > totalPages) {
+                window.location.href = "/"; 
+                return;
+            }
+
             currentPage = num;
             document.getElementById('curr-page').innerText = currentPage;
             
-            // Set Source to the API Endpoint
             const img = document.getElementById('page-img');
             img.src = `/api/read/${GALLERY_ID}/${currentPage}`;
-            
-            // Reset scroll
             document.getElementById('viewer').scrollTop = 0;
+
+            try {
+                await fetch(`/api/progress/${GALLERY_ID}/${currentPage}`, { method: 'POST' });
+            } catch (e) { console.error("Failed to save progress", e); }
         }
 
         // NAVIGATION LOGIC
@@ -191,10 +208,8 @@
 
         // Init
         applySettings();
-
-        document.getElementById('total-pages').innerText = totalPages;
-        
-        loadPage(1);
+        document.getElementById('total-pages').innerText = totalPages; 
+        loadPage(startPage);
     </script>
 </body>
 </html>
