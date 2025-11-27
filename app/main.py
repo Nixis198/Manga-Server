@@ -6,7 +6,7 @@ import os
 
 # Import our local modules
 from . import database, schemas
-from .services import scanner, importer
+from .services import scanner, importer, reader
 
 # Configuration
 DATA_DIR = os.getenv("DATA_DIR", "./data")
@@ -117,3 +117,22 @@ def import_comic(staged_id: int, request: schemas.ImportRequest, db: Session = D
 @app.get("/staging")
 def read_staging(request: Request):
     return templates.TemplateResponse("staging.html", {"request": request})
+
+@app.get("/api/read/{gallery_id}/{page}")
+def read_page(gallery_id: int, page: int, db: Session = Depends(get_db)):
+    """
+    Serves a single image from inside the gallery archive.
+    """
+    image_data = reader.get_page_image(db, gallery_id, page)
+    return Response(content=image_data, media_type="image/jpeg")
+
+@app.get("/reader/{gallery_id}")
+def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)):
+    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    
+    return templates.TemplateResponse("reader.html", {
+        "request": request, 
+        "gallery": gallery
+    })

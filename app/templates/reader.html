@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ gallery.title }}</title>
+    <style>
+        body { 
+            background-color: #121212; 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            color: #ccc;
+            font-family: sans-serif;
+            overflow: hidden; 
+        }
+
+        /* HEADER */
+        header {
+            background-color: #1e1e1e;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            height: 40px;
+            flex-shrink: 0;
+        }
+        .header-title { font-weight: bold; color: #fff; }
+        .btn { 
+            background: #333; color: white; border: none; padding: 5px 12px; 
+            border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 0.9rem;
+        }
+        .btn:hover { background: #555; }
+
+        /* IMAGE AREA */
+        #viewer {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; 
+            overflow: auto;
+            position: relative;
+        }
+
+        #page-img {
+            display: block;
+            max-width: 100%;
+        }
+
+        /* CLICK ZONES */
+        .click-zone {
+            position: absolute;
+            top: 0; bottom: 0;
+            width: 30%; 
+            z-index: 10;
+            cursor: pointer;
+        }
+        #zone-left { left: 0; }
+        #zone-right { right: 0; }
+        
+        /* FOOTER */
+        footer {
+            background-color: #1e1e1e;
+            padding: 10px;
+            text-align: center;
+            border-top: 1px solid #333;
+            height: 30px;
+            flex-shrink: 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            align-items: center;
+        }
+    </style>
+</head>
+
+<body 
+    data-gallery-id="{{ gallery.id }}"
+    data-direction="{{ gallery.reading_direction }}"
+    data-total-pages="{{ gallery.pages_total if gallery.pages_total else 999 }}"
+>
+
+    <header>
+        <a href="/" class="btn">← Back</a>
+        <div class="header-title">{{ gallery.title }}</div>
+        <button class="btn" onclick="toggleSettings()">⚙ Settings</button>
+    </header>
+
+    <div id="viewer">
+        <div id="zone-left" class="click-zone" onclick="goLeft()"></div>
+        <img id="page-img" src="" alt="Page">
+        <div id="zone-right" class="click-zone" onclick="goRight()"></div>
+    </div>
+
+    <footer>
+        <button class="btn" onclick="prevPage()">Prev</button>
+        <span>Page <span id="curr-page">1</span> / <span id="total-pages">?</span></span>
+        <button class="btn" onclick="nextPage()">Next</button>
+    </footer>
+
+    <div id="settings-modal" style="display:none; position:fixed; top:50px; right:20px; background:#2d2d2d; padding:15px; border-radius:8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100;">
+        <h4 style="margin-top:0;">Reader Settings</h4>
+        
+        <div style="margin-bottom:10px;">
+            <label style="display:block; margin-bottom:5px;">Fit Mode:</label>
+            <select id="fit-mode" onchange="applySettings()">
+                <option value="width">Fit Width</option>
+                <option value="height">Fit Height</option>
+                <option value="original">Original Size</option>
+            </select>
+        </div>
+    </div>
+
+    <script>
+        // CONFIG: Read from the body tags instead of direct injection
+        const data = document.body.dataset;
+        const GALLERY_ID = parseInt(data.galleryId);
+        const DIRECTION = data.direction; 
+        let totalPages = parseInt(data.totalPages);
+        
+        let currentPage = 1;
+
+        // LOAD SAVED SETTINGS
+        let settings = JSON.parse(localStorage.getItem('readerSettings')) || { fit: 'height' };
+        document.getElementById('fit-mode').value = settings.fit;
+
+        function applySettings() {
+            const fit = document.getElementById('fit-mode').value;
+            const img = document.getElementById('page-img');
+            
+            if (fit === 'width') {
+                img.style.width = '100%';
+                img.style.height = 'auto';
+            } else if (fit === 'height') {
+                img.style.width = 'auto';
+                img.style.height = '100%';
+            } else {
+                img.style.width = 'auto';
+                img.style.height = 'auto';
+            }
+
+            // Save
+            settings.fit = fit;
+            localStorage.setItem('readerSettings', JSON.stringify(settings));
+        }
+
+        function loadPage(num) {
+            if (num < 1) return;
+            // Optimistic update
+            currentPage = num;
+            document.getElementById('curr-page').innerText = currentPage;
+            
+            // Set Source to the API Endpoint
+            const img = document.getElementById('page-img');
+            img.src = `/api/read/${GALLERY_ID}/${currentPage}`;
+            
+            // Reset scroll
+            document.getElementById('viewer').scrollTop = 0;
+        }
+
+        // NAVIGATION LOGIC
+        function goLeft() {
+            if (DIRECTION === 'RTL') nextPage(); 
+            else prevPage();
+        }
+
+        function goRight() {
+            if (DIRECTION === 'RTL') prevPage(); 
+            else nextPage();
+        }
+
+        function nextPage() {
+            loadPage(currentPage + 1);
+        }
+
+        function prevPage() {
+            if (currentPage > 1) loadPage(currentPage - 1);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === "ArrowLeft") goLeft();
+            if (e.key === "ArrowRight") goRight();
+        });
+
+        function toggleSettings() {
+            const el = document.getElementById('settings-modal');
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Init
+        applySettings();
+        loadPage(1);
+    </script>
+</body>
+</html>
