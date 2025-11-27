@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Import Manager{% endblock %}
+
+{% block content %}
+<div class="staging-container">
+    
+    <div class="file-list-panel">
+        <div class="panel-header">
+            <h3>New Files</h3>
+            <button onclick="triggerScan()" class="btn-small">Refresh/Scan</button>
+        </div>
+        <div id="file-list" class="list-group">
+            <div style="padding:20px; text-align:center; color:#888;">Loading...</div>
+        </div>
+    </div>
+
+    <div class="editor-panel" id="editor-panel" style="display:none;">
+        <div class="editor-layout">
+            
+            <div class="cover-section">
+                <img id="preview-img" src="" alt="Cover Preview">
+                <div style="margin-top: 10px; text-align: center; color: #888; font-size: 0.8rem;">
+                    Filename: <span id="file-name-display"></span>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>Edit Metadata</h2>
+                <form id="import-form" onsubmit="submitImport(event)">
+                    <input type="hidden" id="staged_id">
+                    
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="inp_title" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Artist</label>
+                        <input type="text" id="inp_artist" required>
+                    </div>
+
+                    <div class="form-group-row">
+                        <div class="form-group">
+                            <label>Series (Optional)</label>
+                            <input type="text" id="inp_series" list="series-list">
+                            <datalist id="series-list">
+                                </datalist>
+                        </div>
+                        <div class="form-group">
+                            <label>Reading Direction</label>
+                            <select id="inp_direction">
+                                <option value="RTL">Manga (Right to Left)</option>
+                                <option value="LTR">Comic (Left to Right)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Tags (Comma separated)</label>
+                        <input type="text" id="inp_tags" placeholder="Comedy, Action, Color">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="inp_desc" rows="3"></textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn-save">Save & Import</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="empty-state" style="display:none; flex:1; display:flex; justify-content:center; align-items:center; color:#666;">
+        <h2>Select a file to edit</h2>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentFiles = [];
+
+    // 1. Load Files on Page Load
+    async function loadFiles() {
+        const res = await fetch('/api/staged');
+        currentFiles = await res.json();
+        renderList();
+    }
+
+    // 2. Trigger a Scan manually
+    async function triggerScan() {
+        const btn = document.querySelector('.btn-small');
+        btn.innerText = "Scanning...";
+        await fetch('/api/scan', {method: 'POST'});
+        await loadFiles();
+        btn.innerText = "Refresh/Scan";
+    }
+
+    // 3. Render the Sidebar List
+    function renderList() {
+        const list = document.getElementById('file-list');
+        list.innerHTML = '';
+
+        if (currentFiles.length === 0) {
+            list.innerHTML = '<div style="padding:20px;">No new files found.</div>';
+            return;
+        }
+
+        currentFiles.forEach(file => {
+            const item = document.createElement('div');
+            item.className = 'list-item';
+            item.innerText = file.filename;
+            item.onclick = () => selectFile(file);
+            list.appendChild(item);
+        });
+    }
+
+    // 4. Select a File to Edit
+    function selectFile(file) {
+        // Show panel
+        document.getElementById('editor-panel').style.display = 'block';
+        document.getElementById('empty-state').style.display = 'none';
+
+        // Fill Form
+        document.getElementById('staged_id').value = file.id;
+        document.getElementById('file-name-display').innerText = file.filename;
+        
+        // Auto-fill from guess
+        document.getElementById('inp_title').value = file.suggested_title || "";
+        document.getElementById('inp_artist').value = file.suggested_artist || "";
+        
+        // Load Image
+        document.getElementById('preview-img').src = `/api/staged/${file.id}/cover`;
+
+        // Highlight selected in list
+        document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
+        event.target.classList.add('active');
+    }
+
+    // 5. Submit Import
+    async function submitImport(e) {
+        e.preventDefault();
+        const id = document.getElementById('staged_id').value;
+        const btn = document.querySelector('.btn-save');
+        btn.innerText = "Importing...";
+        btn.disabled = true;
+
+        const payload = {
+            title: document.getElementById('inp_title').value,
+            artist: document.getElementById('inp_artist').value,
+            series: document.getElementById('inp_series').value,
+            direction: document.getElementById('inp_direction').value,
+            description: document.getElementById('inp_desc').value,
+            tags: document.getElementById('inp_tags').value.split(',').map(t => t.trim()).filter(t => t)
+        };
+
+        try {
+            const res = await fetch(`/api/import/${id}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                // Success: Remove from local list and refresh
+                loadFiles();
+                document.getElementById('editor-panel').style.display = 'none';
+                document.getElementById('empty-state').style.display = 'flex';
+                // Optional: Notify user
+            } else {
+                const err = await res.json();
+                alert("Error: " + err.detail);
+            }
+        } catch (err) {
+            alert("System Error: " + err);
+        }
+        
+        btn.innerText = "Save & Import";
+        btn.disabled = false;
+    }
+
+    // Init
+    loadFiles();
+</script>
+{% endblock %}

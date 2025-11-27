@@ -113,3 +113,7 @@ def import_comic(staged_id: int, request: schemas.ImportRequest, db: Session = D
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/staging")
+def read_staging(request: Request):
+    return templates.TemplateResponse("staging.html", {"request": request})
