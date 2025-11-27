@@ -21,15 +21,12 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
     logger.info(f"Starting Import: {meta.title} by {meta.artist}")
 
     # 2. Define Paths
-    # Sanitize inputs to prevent folder errors
+    # Sanitize inputs
     safe_artist = "".join([c for c in meta.artist if c.isalpha() or c.isdigit() or c in " -_"]).strip()
-    safe_title = "".join([c for c in meta.title if c.isalpha() or c.isdigit() or c in " -_"]).strip()
     
-    # Structure: /data/library/Artist/Title/Filename.zip
-    dest_folder = os.path.join(data_dir, "library", safe_artist, safe_title)
+    dest_folder = os.path.join(data_dir, "library", safe_artist)
     os.makedirs(dest_folder, exist_ok=True)
     
-    # FIX: Wrap staged_file.path in str() to satisfy the IDE and os.path
     source_path = str(staged_file.path)
     filename = os.path.basename(source_path)
     dest_path = os.path.join(dest_folder, filename)
@@ -46,6 +43,7 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
             db.flush()
             series_id = new_series.id
 
+    # Handle Category
     category_id = None
     if meta.category:
         existing_cat = db.query(database.Category).filter(database.Category.name == meta.category).first()
@@ -60,7 +58,7 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
     # 4. Create Gallery DB Entry
     new_gallery = database.Gallery(
         filename=filename,
-        path=dest_path, # We store the full internal path
+        path=dest_path, 
         title=meta.title,
         artist=meta.artist,
         description=meta.description,
@@ -68,7 +66,7 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
         series_id=series_id,
         category_id=category_id,
         status="New",
-        pages_total=0 # Default to 0, we update it later
+        pages_total=0 
     )
     
     # 5. Handle Tags
@@ -80,11 +78,10 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
         new_gallery.tags.append(tag)
 
     db.add(new_gallery)
-    db.flush() # We need new_gallery.id for the thumbnail filename
+    db.flush() 
 
     # 6. Move the File
     try:
-        # FIX: Ensure paths are strings
         shutil.move(source_path, dest_path)
     except Exception as e:
         db.rollback()
@@ -94,17 +91,15 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
     # 7. Generate Permanent Thumbnail & Count Pages
     try:
         with zipfile.ZipFile(dest_path, 'r') as z:
-            # Filter for images
             files = sorted([
                 f for f in z.namelist() 
                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
             ])
             
             if files:
-                # FIX: Add # type: ignore to tell IDE this assignment is valid
                 new_gallery.pages_total = len(files) # type: ignore
                 
-                # Generate Thumbnail from the first image
+                # Generate Thumbnail
                 img_data = z.read(files[0])
                 image = Image.open(io.BytesIO(img_data))
                 
@@ -114,13 +109,12 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
                 w_size = int((float(image.size[0]) * float(w_percent)))
                 image = image.resize((w_size, base_height), Image.Resampling.LANCZOS)
                 
-                # Save to /data/thumbnails/{id}.jpg
                 thumb_path = os.path.join(data_dir, "thumbnails", f"{new_gallery.id}.jpg")
                 image = image.convert('RGB')
                 image.save(thumb_path, "JPEG", quality=85)
                 
     except Exception as e:
-        print(f"Warning: Could not process zip content: {e}")
+        logger.warning(f"Warning: Could not process zip content: {e}")
 
     # 8. Cleanup
     db.delete(staged_file)
