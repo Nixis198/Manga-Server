@@ -84,7 +84,7 @@ def get_staged_cover(file_id: int, db: Session = Depends(get_db)):
     if not staged_file:
         raise HTTPException(status_code=404, detail="File not found")
         
-    image_data = scanner.get_cover_from_zip(staged_file.path)
+    image_data = scanner.get_cover_from_zip(str(staged_file.path))
     
     if image_data:
         # We assume JPEG for now, but browsers are smart enough to handle PNGs sent as image/jpeg usually.
