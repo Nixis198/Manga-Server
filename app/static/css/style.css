@@ -213,14 +213,23 @@ nav .badge {
     display: flex;
     gap: 30px;
     margin-top: 20px;
+    height: calc(100vh - 100px); /* Limit height to viewport so logs scroll properly */
+}
+
+/* New Wrapper for the left side */
+.settings-left-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px; /* Space between Global Config and Categories */
+    height: fit-content;
 }
 
 .settings-panel {
-    flex: 1;
     background: var(--card-bg);
     padding: 20px;
     border-radius: 8px;
-    height: fit-content;
+    margin-bottom: 20px;
 }
 
 .logs-panel {
@@ -229,7 +238,9 @@ nav .badge {
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 150px);
+    /* Ensure it fills the height for scrolling */
+    height: 100%; 
+    overflow: hidden; 
 }
 
 .help-text {
@@ -254,4 +265,34 @@ nav .badge {
     margin: 0;
     white-space: pre-wrap; /* Wrap long lines */
     font-size: 0.85rem;
+}
+
+/* --- Library Filter Bar --- */
+.filter-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    background-color: var(--card-bg);
+    color: var(--text-muted);
+    border: 1px solid #444;
+    padding: 8px 16px;
+    border-radius: 20px; /* Pill shape */
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.filter-btn:hover {
+    background-color: #3d3d3d;
+    color: white;
+}
+
+.filter-btn.active {
+    background-color: var(--accent);
+    color: white;
+    border-color: var(--accent);
 }

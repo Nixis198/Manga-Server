@@ -5,21 +5,46 @@
 {% block content %}
 <div class="settings-container">
     
-    <div class="settings-panel">
-        <h2>Global Configuration</h2>
-        <form onsubmit="saveSettings(event)">
-            
-            <div class="form-group">
-                <label>Default Reading Direction</label>
-                <div class="help-text">Applied to new imports automatically.</div>
-                <select id="set_direction">
-                    <option value="LTR">Left to Right (Comic)</option>
-                    <option value="RTL">Right to Left (Manga)</option>
-                </select>
-            </div>
+    <div class="settings-left-column">
+        
+        <div class="settings-panel">
+            <h2>Global Configuration</h2>
+            <form onsubmit="saveSettings(event)">
+                <div class="form-group">
+                    <label>Default Reading Direction</label>
+                    <div class="help-text">Applied to new imports automatically.</div>
+                    <select id="set_direction">
+                        <option value="LTR">Left to Right (Comic)</option>
+                        <option value="RTL">Right to Left (Manga)</option>
+                    </select>
+                </div>
 
-            <button type="submit" class="btn-save">Save Settings</button>
-        </form>
+                <div class="form-group" style="display:flex; align-items:center; gap:10px; margin-top:15px;">
+                    <input type="checkbox" id="set_show_uncategorized" style="width:auto;">
+                    <div>
+                        <label style="margin:0; cursor:pointer;" for="set_show_uncategorized">Show "Uncategorized" Filter</label>
+                        <div class="help-text">Only visible if uncategorized galleries exist.</div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-save">Save Settings</button>
+            </form>
+        </div>
+
+        <div class="settings-panel">
+            <h2>Categories</h2>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <input type="text" id="new_cat_name" placeholder="New Category Name" 
+                       style="flex:1; padding: 8px;"
+                       onkeypress="handleEnter(event)">
+                <button onclick="addCategory()" class="btn-small" style="background:var(--accent);">Add</button>
+            </div>
+            
+            <div id="category-list" class="list-group" style="max-height: 300px; overflow-y: auto; border: 1px solid #444; border-radius: 4px;">
+                <div style="padding:10px; color:#888;">Loading...</div>
+            </div>
+        </div>
+
     </div>
 
     <div class="logs-panel">
@@ -37,7 +62,8 @@
 
 {% block scripts %}
 <script>
-    // 1. Load Settings on Start
+    // --- GLOBAL SETTINGS LOGIC ---
+
     async function loadSettings() {
         const res = await fetch('/api/settings');
         const data = await res.json();
@@ -45,13 +71,17 @@
         if (data.default_direction) {
             document.getElementById('set_direction').value = data.default_direction;
         }
+        
+        if (data.show_uncategorized === "true") {
+            document.getElementById('set_show_uncategorized').checked = true;
+        }
     }
 
-    // 2. Save Settings
     async function saveSettings(e) {
         e.preventDefault();
         const payload = {
-            default_direction: document.getElementById('set_direction').value
+            default_direction: document.getElementById('set_direction').value,
+            show_uncategorized: document.getElementById('set_show_uncategorized').checked ? "true" : "false"
         };
 
         const res = await fetch('/api/settings', {
@@ -67,21 +97,89 @@
         }
     }
 
-    // 3. Fetch Logs
+    // --- CATEGORY MANAGER LOGIC ---
+
+    async function loadCategories() {
+        const res = await fetch('/api/categories');
+        const cats = await res.json();
+        const list = document.getElementById('category-list');
+        list.innerHTML = '';
+        
+        if (cats.length === 0) {
+            list.innerHTML = '<div style="padding:10px; color:#888;">No categories created yet.</div>';
+            return;
+        }
+
+        cats.forEach(cat => {
+            const item = document.createElement('div');
+            item.className = 'list-item'; 
+            item.style.display = 'flex';
+            item.style.justifyContent = 'space-between';
+            item.style.alignItems = 'center';
+            item.style.padding = '8px 10px';
+            item.style.borderBottom = '1px solid #444';
+            
+            item.innerHTML = `
+                <span>${cat.name} <span style="color:#888; font-size:0.8rem;">(${cat.count} items)</span></span>
+                <button onclick="deleteCategory(${cat.id})" style="background:#c0392b; color:white; border:none; padding:2px 8px; border-radius:3px; cursor:pointer;">×</button>
+            `;
+            list.appendChild(item);
+        });
+    }
+
+    function handleEnter(e) {
+        if (e.key === 'Enter') addCategory();
+    }
+
+    async function addCategory() {
+        const input = document.getElementById('new_cat_name');
+        const name = input.value.trim();
+        if(!name) return;
+
+        const res = await fetch('/api/categories', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name})
+        });
+
+        if(res.ok) {
+            input.value = '';
+            loadCategories();
+        } else {
+            const err = await res.json();
+            alert("Error: " + err.detail);
+        }
+    }
+
+    async function deleteCategory(id, force=false) {
+        let url = `/api/categories/${id}`;
+        if (force) url += '?force=true';
+
+        const res = await fetch(url, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.status === 'conflict') {
+            if (confirm(`${data.message}\nDo you want to delete it anyway?`)) {
+                deleteCategory(id, true);
+            }
+        } else if (data.status === 'deleted') {
+            loadCategories();
+        }
+    }
+
+    // --- LOGS LOGIC ---
     async function fetchLogs() {
         const res = await fetch('/api/logs');
         const data = await res.json();
         const logBox = document.getElementById('log-output');
         logBox.innerText = data.logs;
-        // Auto scroll to bottom
         logBox.scrollTop = logBox.scrollHeight;
     }
 
-    // Init
+    // INIT
     loadSettings();
+    loadCategories();
     fetchLogs();
-    
-    // Auto-refresh logs every 5 seconds
     setInterval(fetchLogs, 5000);
 </script>
 {% endblock %}

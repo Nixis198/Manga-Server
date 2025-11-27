@@ -222,13 +222,16 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
 
 @app.get("/api/settings")
 def get_settings(db: Session = Depends(get_db)):
-    # Convert DB rows (Key/Value) into a simple JSON object
     settings_list = db.query(database.Settings).all()
     settings_dict = {s.key: s.value for s in settings_list}
     
-    # Set defaults if keys don't exist
+    # Defaults
     if "default_direction" not in settings_dict:
         settings_dict["default_direction"] = "LTR" # type: ignore
+    
+    # NEW: Default for the toggle
+    if "show_uncategorized" not in settings_dict:
+        settings_dict["show_uncategorized"] = "false" # type: ignore
         
     return settings_dict
 
@@ -266,3 +269,60 @@ def get_logs():
 @app.get("/settings")
 def read_settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {"request": request})
+
+# --- CATEGORY MANAGEMENT API ---
+
+@app.get("/api/categories")
+def get_categories(db: Session = Depends(get_db)):
+    """
+    Returns a list of categories with the count of galleries in each.
+    """
+    categories = db.query(database.Category).all()
+    result = []
+    for cat in categories:
+        result.append({
+            "id": cat.id, 
+            "name": cat.name, 
+            "count": len(cat.galleries) # SQLAlchemy relationship makes this easy
+        })
+    return result
+
+@app.post("/api/categories")
+def create_category(payload: dict, db: Session = Depends(get_db)):
+    name = payload.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    
+    existing = db.query(database.Category).filter(database.Category.name == name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Category already exists")
+    
+    new_cat = database.Category(name=name)
+    db.add(new_cat)
+    db.commit()
+    return {"status": "created", "id": new_cat.id, "name": new_cat.name}
+
+@app.delete("/api/categories/{cat_id}")
+def delete_category(cat_id: int, force: bool = False, db: Session = Depends(get_db)):
+    cat = db.query(database.Category).filter(database.Category.id == cat_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    
+    # Check if empty
+    if len(cat.galleries) > 0 and not force:
+        return {
+            "status": "conflict", 
+            "message": f"This category contains {len(cat.galleries)} galleries.",
+            "count": len(cat.galleries)
+        }
+    
+    # If force is True, or empty, we delete.
+    # Note: Because of SQLAlchemy relationships, we need to ensure we don't delete the galleries, just the link.
+    # Setting the relationship to None happens automatically if we don't use 'cascade=delete'.
+    # But let's be explicit to be safe:
+    for gallery in cat.galleries:
+        gallery.category_id = None
+        
+    db.delete(cat)
+    db.commit()
+    return {"status": "deleted"}

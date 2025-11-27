@@ -49,9 +49,9 @@
                             
                             <div class="form-group">
                                 <label>Category</label>
-                                <input type="text" id="inp_category" list="category-list" placeholder="Manga, Doujinshi...">
-                                <datalist id="category-list">
-                                    </datalist>
+                                <select id="inp_category">
+                                    <option value="">(None)</option>
+                                    </select>
                             </div>
 
                             <div class="form-group">
@@ -126,6 +126,7 @@
         currentFiles = await res.json();
         
         renderList();
+        loadCategoryDropdown();
 
         // Update Badge
         const badge = document.getElementById('nav-count');
@@ -263,6 +264,22 @@
         
         btn.innerText = "Save & Import";
         btn.disabled = false;
+    }
+
+    async function loadCategoryDropdown() {
+        const res = await fetch('/api/categories');
+        const cats = await res.json();
+        const select = document.getElementById('inp_category');
+        
+        // Clear existing (keep the first 'None' option)
+        select.innerHTML = '<option value="">(None)</option>';
+        
+        cats.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.name; // We still pass the name to the importer logic
+            opt.innerText = cat.name;
+            select.appendChild(opt);
+        });
     }
 
     // Init
