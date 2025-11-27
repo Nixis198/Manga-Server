@@ -44,7 +44,21 @@
                 <div style="padding:10px; color:#888;">Loading...</div>
             </div>
         </div>
-
+        <div class="settings-panel">
+            <h2>Database Maintenance</h2>
+            <p class="help-text">Export your metadata to a JSON file or restore from a backup.</p>
+            
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button onclick="downloadBackup()" class="btn-save" style="background: var(--accent); flex: 1;">
+                    Download Backup
+                </button>
+                
+                <input type="file" id="restore-input" style="display: none;" onchange="uploadRestore(this)">
+                <button onclick="document.getElementById('restore-input').click()" class="btn-save" style="background: #e67e22; flex: 1;">
+                    Restore Backup
+                </button>
+            </div>
+        </div>
     </div>
 
     <div class="logs-panel">
@@ -189,6 +203,62 @@
             fetchLogs();
         } else {
             alert("Failed to clear logs.");
+        }
+    }
+
+    // --- BACKUP & RESTORE LOGIC ---
+
+    async function downloadBackup() {
+        // Trigger the download
+        const a = document.createElement("a");
+        a.href = "/api/backup";
+        // Name the file with a timestamp
+        const date = new Date().toISOString().slice(0, 10);
+        a.download = `manga_server_backup_${date}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+
+    async function uploadRestore(inputElement) {
+        const file = inputElement.files[0];
+        if (!file) return;
+
+        if (!confirm("WARNING: This will wipe your current database and replace it with the backup. Continue?")) {
+            inputElement.value = ''; // Reset input
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        // Show loading state (optional UI enhancement)
+        const btn = inputElement.nextElementSibling; // The button we clicked
+        const originalText = btn.innerText;
+        btn.innerText = "Restoring...";
+        btn.disabled = true;
+
+        try {
+            const res = await fetch("/api/restore", {
+                method: "POST",
+                body: formData
+            });
+            
+            const result = await res.json();
+            
+            if (res.ok) {
+                alert("Restore Successful! The page will now reload.");
+                location.reload();
+            } else {
+                alert("Error: " + result.detail);
+            }
+        } catch (e) {
+            alert("Upload failed: " + e);
+        } finally {
+            // Reset UI
+            btn.innerText = originalText;
+            btn.disabled = false;
+            inputElement.value = '';
         }
     }
 

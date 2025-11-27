@@ -1,7 +1,9 @@
 import logging
 import time
 import shutil
-from fastapi import FastAPI, Depends, HTTPException, Response, Request
+import json
+from datetime import datetime
+from fastapi import FastAPI, Depends, HTTPException, Response, Request, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -419,3 +421,133 @@ def clear_logs():
         logger.info("Logs cleared by user.")
         
     return {"status": "cleared"}
+
+# --- BACKUP & RESTORE API ---
+
+@app.get("/api/backup")
+def backup_database(db: Session = Depends(get_db)):
+    """
+    Exports all database tables to a JSON structure.
+    """
+    data = {
+        "timestamp": str(datetime.now()),
+        "version": "1.0",
+        "categories": [],
+        "series": [],
+        "tags": [],
+        "galleries": [],
+        "settings": []
+    }
+
+    # 1. Export Categories
+    for c in db.query(database.Category).all():
+        data["categories"].append({"id": c.id, "name": c.name})
+
+    # 2. Export Series
+    for s in db.query(database.Series).all():
+        data["series"].append({"id": s.id, "name": s.name, "description": s.description})
+
+    # 3. Export Tags
+    for t in db.query(database.Tag).all():
+        data["tags"].append({"id": t.id, "name": t.name})
+
+    # 4. Export Settings
+    for s in db.query(database.Settings).all():
+        data["settings"].append({"key": s.key, "value": s.value})
+
+    # 5. Export Galleries
+    # We need to manually construct this to handle relationships (tags)
+    for g in db.query(database.Gallery).all():
+        g_data = {
+            "id": g.id,
+            "filename": g.filename,
+            "path": g.path,
+            "title": g.title,
+            "artist": g.artist,
+            "status": g.status,
+            "pages_read": g.pages_read,
+            "pages_total": g.pages_total,
+            "reading_direction": g.reading_direction,
+            "series_id": g.series_id,
+            "category_id": g.category_id,
+            "description": g.description,
+            "tag_names": [t.name for t in g.tags] # Store names to link back later
+        }
+        data["galleries"].append(g_data)
+
+    return data
+
+@app.post("/api/restore")
+async def restore_database(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """
+    Wipes the DB and restores from JSON.
+    """
+    try:
+        content = await file.read()
+        data = json.loads(content)
+        
+        # 1. WIPE TABLES (Order matters for Foreign Keys)
+        # Clear relationships first
+        db.query(database.gallery_tags).delete()
+        db.query(database.Gallery).delete()
+        db.query(database.Series).delete()
+        db.query(database.Category).delete()
+        db.query(database.Tag).delete()
+        db.query(database.Settings).delete()
+        db.commit()
+
+        # 2. RESTORE (Keep original IDs to preserve file links)
+        
+        # Categories
+        for c in data.get("categories", []):
+            db.add(database.Category(id=c["id"], name=c["name"]))
+        
+        # Series
+        for s in data.get("series", []):
+            db.add(database.Series(id=s["id"], name=s["name"], description=s.get("description")))
+            
+        # Tags
+        tag_map = {} # Cache for quick lookup during gallery restore
+        for t in data.get("tags", []):
+            new_tag = database.Tag(id=t["id"], name=t["name"])
+            db.add(new_tag)
+            tag_map[t["name"]] = new_tag
+            
+        # Settings
+        for s in data.get("settings", []):
+            db.add(database.Settings(key=s["key"], value=s["value"]))
+            
+        db.commit() # Commit base tables before galleries
+        
+        # Galleries
+        for g in data.get("galleries", []):
+            new_gallery = database.Gallery(
+                id=g["id"],
+                filename=g["filename"],
+                path=g["path"],
+                title=g["title"],
+                artist=g["artist"],
+                status=g["status"],
+                pages_read=g.get("pages_read", 0),
+                pages_total=g.get("pages_total", 0),
+                reading_direction=g.get("reading_direction", "LTR"),
+                series_id=g["series_id"],
+                category_id=g["category_id"],
+                description=g.get("description")
+            )
+            
+            # Re-link Tags
+            for t_name in g.get("tag_names", []):
+                if t_name in tag_map:
+                    new_gallery.tags.append(tag_map[t_name])
+            
+            db.add(new_gallery)
+            
+        db.commit()
+        logger.info("Database restored successfully from backup.")
+        return {"status": "success", "message": "Database restored."}
+
+    except Exception as e:
+        logger.error(f"Restore failed: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
