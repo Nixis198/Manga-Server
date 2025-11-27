@@ -50,8 +50,11 @@
     <div class="logs-panel">
         <div class="panel-header">
             <h3>Server Logs</h3>
-            <button onclick="fetchLogs()" class="btn-small">Refresh</button>
-        </div>
+                <div>
+                    <button onclick="fetchLogs()" class="btn-small">Refresh</button>
+                    <button onclick="clearLogs()" class="btn-small" style="background:#c0392b; margin-left:5px;">Clear</button>
+                </div>
+            </div>
         <div class="console-window">
             <pre id="log-output">Loading logs...</pre>
         </div>
@@ -174,6 +177,19 @@
         const logBox = document.getElementById('log-output');
         logBox.innerText = data.logs;
         logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    async function clearLogs() {
+        if (!confirm("Are you sure you want to clear the server logs?")) return;
+
+        const res = await fetch('/api/logs', { method: 'DELETE' });
+        
+        if (res.ok) {
+            // Refresh the view immediately
+            fetchLogs();
+        } else {
+            alert("Failed to clear logs.");
+        }
     }
 
     // INIT

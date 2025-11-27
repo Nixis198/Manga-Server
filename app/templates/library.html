@@ -11,7 +11,7 @@
         <button class="filter-btn active" onclick="filterByCategory('all', this)">All</button>
         </div>
 
-    <div class="grid" id="gallery-grid">
+<div class="grid" id="gallery-grid">
         {% for gallery in galleries %}
         <div class="card" 
              data-id="{{ gallery.id }}"
@@ -24,14 +24,24 @@
              onclick="window.location.href='/reader/{{ gallery.id }}'">
             
             <img src="/thumbnails/{{ gallery.id }}.jpg" loading="lazy" alt="Cover">
+            
             <div class="card-body">
-                {% if gallery.category %}
-                <span class="badge" style="float:right; background:#555;">{{ gallery.category.name }}</span>
-                {% endif %}
-                
-                <span class="badge status-{{ gallery.status|lower }}">{{ gallery.status }}</span>
                 <div class="card-title" title="{{ gallery.title }}">{{ gallery.title }}</div>
-                <div class="card-artist">{{ gallery.artist }}</div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                    
+                    <div class="card-artist" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px;">
+                        {{ gallery.artist }}
+                    </div>
+                    
+                    <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                        <span class="badge status-{{ gallery.status|lower }}" style="float:none;">{{ gallery.status }}</span>
+                        
+                        {% if gallery.category %}
+                        <span class="badge" style="float:none; background:#555;">{{ gallery.category.name }}</span>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
         </div>
         {% endfor %}

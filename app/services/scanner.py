@@ -1,13 +1,21 @@
 import os
 import zipfile
+import logging
 from sqlalchemy.orm import Session
 from ..database import StagedFile, SessionLocal
+
+# Setup local logger
+logger = logging.getLogger(__name__)
 
 def scan_input_directory(input_dir: str):
     """
     Scans the input directory for .zip files and syncs them with the StagedFile DB table.
     """
     db: Session = SessionLocal()
+
+    new_files_count = 0
+    removed_count = 0
+    
     try:
         # 1. Get list of physical files in Input folder
         physical_files = []
@@ -24,6 +32,7 @@ def scan_input_directory(input_dir: str):
         new_files_count = 0
         for filename in physical_files:
             if filename not in db_filenames:
+                logger.info(f"Scanner found new file: {filename}")
                 # Try to guess title/artist from filename (simple guess)
                 # Format assumed: [Artist] Title.zip
                 suggested_artist = None
@@ -52,13 +61,18 @@ def scan_input_directory(input_dir: str):
         # 4. Remove DB entries if file no longer exists (User deleted it manually)
         for db_file in db_files:
             if db_file.filename not in physical_files:
+                logger.info(f"Scanner removed missing file: {db_file.filename}")
                 db.delete(db_file)
+                removed_count += 1
 
-        db.commit()
+        if new_files_count > 0 or removed_count > 0:
+            db.commit()
+            logger.info(f"Scan Complete: {new_files_count} added, {removed_count} removed.")
+        
         return {"added": new_files_count, "total_staged": len(physical_files)}
 
     except Exception as e:
-        print(f"Error scanning input directory: {e}")
+        logger.error(f"Error scanning input directory: {e}")
         return {"error": str(e)}
     finally:
         db.close()

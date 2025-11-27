@@ -2,17 +2,23 @@ import os
 import shutil
 import zipfile
 import io
+import logging
 from sqlalchemy.orm import Session
 from PIL import Image
 
 from .. import database
 from ..schemas import ImportRequest
 
+# Setup local logger
+logger = logging.getLogger(__name__)
+
 def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: str):
     # 1. Fetch the Staged File record
     staged_file = db.query(database.StagedFile).filter(database.StagedFile.id == staged_id).first()
     if not staged_file:
         raise ValueError("Staged file not found")
+
+    logger.info(f"Starting Import: {meta.title} by {meta.artist}")
 
     # 2. Define Paths
     # Sanitize inputs to prevent folder errors
@@ -82,6 +88,7 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
         shutil.move(source_path, dest_path)
     except Exception as e:
         db.rollback()
+        logger.error(f"Import Failed: Could not move file. {e}")
         raise IOError(f"Failed to move file: {e}")
 
     # 7. Generate Permanent Thumbnail & Count Pages
@@ -119,4 +126,5 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
     db.delete(staged_file)
     db.commit()
     
+    logger.info(f"Import Success: Gallery ID {new_gallery.id} created.")
     return new_gallery

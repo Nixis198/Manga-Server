@@ -1,22 +1,56 @@
+import logging
+import time
 from fastapi import FastAPI, Depends, HTTPException, Response, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
-import logging
 
 # Import our local modules
 from . import database, schemas
 from .services import scanner, importer, reader
 
-# Configuration
+# --- CONFIGURATION ---
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 INPUT_DIR = os.path.join(DATA_DIR, "input")
 LIBRARY_DIR = os.path.join(DATA_DIR, "library")
 THUMBNAIL_DIR = os.path.join(DATA_DIR, "thumbnails")
+LOG_FILE = os.path.join(DATA_DIR, "logs", "server.log")
+
+# Ensure Log Directory Exists immediately
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+# --- SETUP LOGGING ---
+# We configure this at the module level so it runs before the app starts
+logging.basicConfig(
+    filename=LOG_FILE, 
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    force=True # Force usage of our settings
+)
+logger = logging.getLogger(__name__)
 
 # Initialize App
 app = FastAPI(title="Manga Server")
+
+# --- MIDDLEWARE (Logs every request) ---
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    
+    # Process the request
+    response = await call_next(request)
+    
+    # Calculate duration
+    process_time = (time.time() - start_time) * 1000
+    
+    # Log format: "GET /api/library - 200 OK - 15ms"
+    # We skip logging the /api/logs endpoint itself to prevent infinite loops in the log viewer
+    if "/api/logs" not in request.url.path:
+        logger.info(f"{request.method} {request.url.path} - {response.status_code} - {process_time:.2f}ms")
+    
+    return response
 
 # Dependency to get DB session
 def get_db():
@@ -26,28 +60,19 @@ def get_db():
     finally:
         db.close()
 
-LOG_FILE = os.path.join(DATA_DIR, "logs", "server.log")
-
 @app.on_event("startup")
 async def startup_event():
     # 1. Create necessary directories
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(LIBRARY_DIR, exist_ok=True)
     os.makedirs(THUMBNAIL_DIR, exist_ok=True)
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-
-    # 2. Setup Logging
-    # This captures print statements and errors to the file
-    logging.basicConfig(
-        filename=LOG_FILE, 
-        level=logging.INFO, 
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        force=True
-    )
     
-    # 3. Initialize Database
+    # 2. Initialize Database
     database.init_db()
-    print(f"Server started. Monitoring {INPUT_DIR}")
+    logger.info("------------------------------------------------")
+    logger.info(f"SERVER STARTED SUCCESSFULLY")
+    logger.info(f"Monitoring Input Directory: {INPUT_DIR}")
+    logger.info("------------------------------------------------")
 
 # Mount Static Files (CSS, JS)
 # We will create the 'static' folder later for the frontend
@@ -176,7 +201,10 @@ def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
 def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
     gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
     if not gallery:
+        logger.warning(f"Update failed: Gallery ID {gallery_id} not found.")
         raise HTTPException(status_code=404, detail="Gallery not found")
+    
+    old_title = gallery.title
     
     # 1. Update basic fields
     gallery.title = request.title # type: ignore
@@ -216,6 +244,7 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
         gallery.tags.append(tag)
 
     db.commit()
+    logger.info(f"Metadata updated for ID {gallery_id}: '{old_title}' -> '{gallery.title}'")
     return {"status": "success"}
 
 # --- SETTINGS API ---
@@ -326,3 +355,16 @@ def delete_category(cat_id: int, force: bool = False, db: Session = Depends(get_
     db.delete(cat)
     db.commit()
     return {"status": "deleted"}
+
+@app.delete("/api/logs")
+def clear_logs():
+    """Clears the log file content"""
+    if os.path.exists(LOG_FILE):
+        # Open in 'w' mode to truncate/wipe the file
+        with open(LOG_FILE, 'w') as f:
+            pass 
+            
+        # Add a fresh log entry so it's not totally empty
+        logger.info("Logs cleared by user.")
+        
+    return {"status": "cleared"}
