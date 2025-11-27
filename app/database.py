@@ -62,7 +62,7 @@ class Gallery(Base):
     pages_total = Column(Integer, default=0)
     
     # Settings specific to this gallery
-    reading_direction = Column(String, default="RTL") # RTL (Manga) or LTR (Comic)
+    reading_direction = Column(String, default="LTR") # RTL (Manga) or LTR (Comic)
     
     # Relationships
     series_id = Column(Integer, ForeignKey('series.id'), nullable=True)

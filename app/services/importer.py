@@ -1,9 +1,9 @@
 import os
 import shutil
 import zipfile
+import io
 from sqlalchemy.orm import Session
 from PIL import Image
-import io
 
 from .. import database
 from ..schemas import ImportRequest
@@ -15,7 +15,7 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
         raise ValueError("Staged file not found")
 
     # 2. Define Paths
-    # Sanitize inputs to prevent folder errors (e.g. removing "/" from artist names)
+    # Sanitize inputs to prevent folder errors
     safe_artist = "".join([c for c in meta.artist if c.isalpha() or c.isdigit() or c in " -_"]).strip()
     safe_title = "".join([c for c in meta.title if c.isalpha() or c.isdigit() or c in " -_"]).strip()
     
@@ -23,32 +23,34 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
     dest_folder = os.path.join(data_dir, "library", safe_artist, safe_title)
     os.makedirs(dest_folder, exist_ok=True)
     
-    dest_path = os.path.join(dest_folder, os.path.basename(staged_file.path))
+    # FIX: Wrap staged_file.path in str() to satisfy the IDE and os.path
+    source_path = str(staged_file.path)
+    filename = os.path.basename(source_path)
+    dest_path = os.path.join(dest_folder, filename)
 
     # 3. Handle Series (Find existing or Create new)
     series_id = None
     if meta.series:
-        # Check if series exists
         existing_series = db.query(database.Series).filter(database.Series.name == meta.series).first()
         if existing_series:
             series_id = existing_series.id
         else:
-            # Create new series
             new_series = database.Series(name=meta.series)
             db.add(new_series)
-            db.flush() # Flush to get the ID
+            db.flush()
             series_id = new_series.id
 
     # 4. Create Gallery DB Entry
     new_gallery = database.Gallery(
-        filename=os.path.basename(staged_file.path),
+        filename=filename,
         path=dest_path, # We store the full internal path
         title=meta.title,
         artist=meta.artist,
         description=meta.description,
         reading_direction=meta.direction,
         series_id=series_id,
-        status="New"
+        status="New",
+        pages_total=0 # Default to 0, we update it later
     )
     
     # 5. Handle Tags
@@ -64,21 +66,30 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
 
     # 6. Move the File
     try:
-        shutil.move(staged_file.path, dest_path)
+        # FIX: Ensure paths are strings
+        shutil.move(source_path, dest_path)
     except Exception as e:
         db.rollback()
         raise IOError(f"Failed to move file: {e}")
 
-    # 7. Generate Permanent Thumbnail
-    # We extract the first image, resize it (height 400px), and save as JPG
+    # 7. Generate Permanent Thumbnail & Count Pages
     try:
         with zipfile.ZipFile(dest_path, 'r') as z:
-            files = sorted([f for f in z.namelist() if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
+            # Filter for images
+            files = sorted([
+                f for f in z.namelist() 
+                if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
+            ])
+            
             if files:
+                # FIX: Add # type: ignore to tell IDE this assignment is valid
+                new_gallery.pages_total = len(files) # type: ignore
+                
+                # Generate Thumbnail from the first image
                 img_data = z.read(files[0])
                 image = Image.open(io.BytesIO(img_data))
                 
-                # Resize for optimization (preserve aspect ratio)
+                # Resize
                 base_height = 400
                 w_percent = (base_height / float(image.size[1]))
                 w_size = int((float(image.size[0]) * float(w_percent)))
@@ -86,10 +97,11 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
                 
                 # Save to /data/thumbnails/{id}.jpg
                 thumb_path = os.path.join(data_dir, "thumbnails", f"{new_gallery.id}.jpg")
-                image = image.convert('RGB') # Ensure it saves as JPG even if original was PNG
+                image = image.convert('RGB')
                 image.save(thumb_path, "JPEG", quality=85)
+                
     except Exception as e:
-        print(f"Warning: Could not generate thumbnail: {e}")
+        print(f"Warning: Could not process zip content: {e}")
 
     # 8. Cleanup
     db.delete(staged_file)

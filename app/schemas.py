@@ -5,6 +5,6 @@ class ImportRequest(BaseModel):
     title: str
     artist: str
     description: Optional[str] = None
-    direction: str = "RTL"  # Default to Manga (Right-to-Left)
+    direction: str = "LTR"
     series: Optional[str] = None
     tags: List[str] = []

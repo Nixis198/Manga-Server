@@ -105,11 +105,23 @@
 <script>
     let currentFiles = [];
 
-    // 1. Load Files on Page Load
+    // 1. Load Files on Page Load & Update Badge
     async function loadFiles() {
         const res = await fetch('/api/staged');
         currentFiles = await res.json();
         renderList();
+
+        // --- NEW: Update the Navigation Badge ---
+        const badge = document.getElementById('nav-count');
+        const count = currentFiles.length;
+        
+        if (count > 0) {
+            badge.innerText = count;
+            badge.style.display = 'inline-block';
+            badge.classList.add('status-new'); 
+        } else {
+            badge.style.display = 'none';
+        }
     }
 
     // 2. Trigger a Scan manually
