@@ -66,6 +66,26 @@
                         <textarea id="inp_desc" rows="3"></textarea>
                     </div>
 
+                    <div style="background: #252525; padding: 15px; border-radius: 6px; border: 1px solid #444; margin-bottom: 20px; margin-top: 20px;">
+                        <h3 style="margin-top:0; font-size: 1rem; color: var(--accent);">Auto-Fill Metadata</h3>
+                        <div class="form-group-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Source / Plugin</label>
+                                <select id="plugin_source">
+                                    <option value="" disabled selected>Select a plugin...</option>
+                                    <option value="fakku">Fakku (Coming Soon)</option>
+                                    <option value="mangaupdates">MangaUpdates (Coming Soon)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 2;">
+                                <label>URL / ID</label>
+                                <div style="display: flex; gap: 10px;">
+                                    <input type="text" id="plugin_url" placeholder="Paste URL here...">
+                                    <button type="button" onclick="runPlugin()" class="btn-small" style="background: var(--accent);">Fetch</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="form-actions">
                         <button type="submit" class="btn-save">Save & Import</button>
                     </div>
@@ -140,6 +160,26 @@
         // Highlight selected in list
         document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
         event.target.classList.add('active');
+    }
+
+    // NEW: Plugin Logic
+    async function runPlugin() {
+        const source = document.getElementById('plugin_source').value;
+        const url = document.getElementById('plugin_url').value;
+
+        if (!source || !url) {
+            alert("Please select a source and enter a URL.");
+            return;
+        }
+
+        // Placeholder for future API call
+        // e.g., const res = await fetch('/api/plugins/run', ... );
+        
+        alert(`Plugin system not implemented yet.\nSource: ${source}\nURL: ${url}`);
+        
+        // Example of how it will work later:
+        // document.getElementById('inp_title').value = data.title;
+        // document.getElementById('inp_artist').value = data.artist;
     }
 
     // 5. Submit Import

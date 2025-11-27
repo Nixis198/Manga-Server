@@ -189,3 +189,11 @@ input:focus, textarea:focus { border-color: var(--accent); outline: none; }
 }
 .btn-save:hover { background-color: #27ae60; }
 .btn-save:disabled { background-color: #555; cursor: wait; }
+
+/* Fix for notification badge in the navbar */
+nav .badge {
+    float: none;
+    display: inline-block;
+    margin-left: 8px;
+    vertical-align: text-bottom;
+}
