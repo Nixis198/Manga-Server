@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    
+    <div class="settings-panel">
+        <h2>Global Configuration</h2>
+        <form onsubmit="saveSettings(event)">
+            
+            <div class="form-group">
+                <label>Default Reading Direction</label>
+                <div class="help-text">Applied to new imports automatically.</div>
+                <select id="set_direction">
+                    <option value="LTR">Left to Right (Comic)</option>
+                    <option value="RTL">Right to Left (Manga)</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-save">Save Settings</button>
+        </form>
+    </div>
+
+    <div class="logs-panel">
+        <div class="panel-header">
+            <h3>Server Logs</h3>
+            <button onclick="fetchLogs()" class="btn-small">Refresh</button>
+        </div>
+        <div class="console-window">
+            <pre id="log-output">Loading logs...</pre>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 1. Load Settings on Start
+    async function loadSettings() {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        
+        if (data.default_direction) {
+            document.getElementById('set_direction').value = data.default_direction;
+        }
+    }
+
+    // 2. Save Settings
+    async function saveSettings(e) {
+        e.preventDefault();
+        const payload = {
+            default_direction: document.getElementById('set_direction').value
+        };
+
+        const res = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert("Settings Saved!");
+        } else {
+            alert("Error saving settings.");
+        }
+    }
+
+    // 3. Fetch Logs
+    async function fetchLogs() {
+        const res = await fetch('/api/logs');
+        const data = await res.json();
+        const logBox = document.getElementById('log-output');
+        logBox.innerText = data.logs;
+        // Auto scroll to bottom
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // Init
+    loadSettings();
+    fetchLogs();
+    
+    // Auto-refresh logs every 5 seconds
+    setInterval(fetchLogs, 5000);
+</script>
+{% endblock %}

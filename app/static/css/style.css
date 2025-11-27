@@ -207,3 +207,51 @@ nav .badge {
     background-color: var(--accent);
     color: white;
 }
+
+/* --- Settings Page --- */
+.settings-container {
+    display: flex;
+    gap: 30px;
+    margin-top: 20px;
+}
+
+.settings-panel {
+    flex: 1;
+    background: var(--card-bg);
+    padding: 20px;
+    border-radius: 8px;
+    height: fit-content;
+}
+
+.logs-panel {
+    flex: 2;
+    background: var(--card-bg);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 150px);
+}
+
+.help-text {
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 5px;
+}
+
+.console-window {
+    background-color: #000;
+    color: #00ff00; /* Hacker Green */
+    font-family: "Consolas", "Courier New", monospace;
+    padding: 15px;
+    flex: 1;
+    overflow-y: auto;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top: 1px solid #444;
+}
+
+.console-window pre {
+    margin: 0;
+    white-space: pre-wrap; /* Wrap long lines */
+    font-size: 0.85rem;
+}

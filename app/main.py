@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import os
+import logging
 
 # Import our local modules
 from . import database, schemas
@@ -25,14 +26,26 @@ def get_db():
     finally:
         db.close()
 
+LOG_FILE = os.path.join(DATA_DIR, "logs", "server.log")
+
 @app.on_event("startup")
 async def startup_event():
     # 1. Create necessary directories
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(LIBRARY_DIR, exist_ok=True)
     os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+    # 2. Setup Logging
+    # This captures print statements and errors to the file
+    logging.basicConfig(
+        filename=LOG_FILE, 
+        level=logging.INFO, 
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        force=True
+    )
     
-    # 2. Initialize Database
+    # 3. Initialize Database
     database.init_db()
     print(f"Server started. Monitoring {INPUT_DIR}")
 
@@ -204,3 +217,52 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
 
     db.commit()
     return {"status": "success"}
+
+# --- SETTINGS API ---
+
+@app.get("/api/settings")
+def get_settings(db: Session = Depends(get_db)):
+    # Convert DB rows (Key/Value) into a simple JSON object
+    settings_list = db.query(database.Settings).all()
+    settings_dict = {s.key: s.value for s in settings_list}
+    
+    # Set defaults if keys don't exist
+    if "default_direction" not in settings_dict:
+        settings_dict["default_direction"] = "LTR" # type: ignore
+        
+    return settings_dict
+
+@app.post("/api/settings")
+def save_settings(payload: dict, db: Session = Depends(get_db)):
+    for key, value in payload.items():
+        setting = db.query(database.Settings).filter(database.Settings.key == key).first()
+        if not setting:
+            setting = database.Settings(key=key, value=str(value))
+            db.add(setting)
+        else:
+            setting.value = str(value) # type: ignore
+    db.commit()
+    logging.info("Settings updated by user.")
+    return {"status": "saved"}
+
+# --- LOGS API ---
+
+@app.get("/api/logs")
+def get_logs():
+    """Reads the last 100 lines of the log file"""
+    if not os.path.exists(LOG_FILE):
+        return {"logs": "Log file not created yet."}
+    
+    try:
+        with open(LOG_FILE, "r") as f:
+            # Simple tail implementation
+            lines = f.readlines()
+            last_lines = lines[-100:] # Get last 100
+            return {"logs": "".join(last_lines)}
+    except Exception as e:
+        return {"logs": f"Error reading logs: {e}"}
+
+# --- ROUTE FOR THE PAGE ---
+@app.get("/settings")
+def read_settings_page(request: Request):
+    return templates.TemplateResponse("settings.html", {"request": request})

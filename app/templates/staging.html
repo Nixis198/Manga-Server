@@ -112,8 +112,16 @@
 <script>
     let currentFiles = [];
 
+    let defaultDirection = "LTR"; // Default fallback
+
     // 1. Load Files on Page Load
     async function loadFiles() {
+        // 1. Fetch Global Settings
+        const settingsRes = await fetch('/api/settings');
+        const settings = await settingsRes.json();
+        if (settings.default_direction) defaultDirection = settings.default_direction;
+
+        // 2. Fetch Files
         const res = await fetch('/api/staged');
         currentFiles = await res.json();
         
@@ -183,6 +191,7 @@
         // Auto-fill form
         document.getElementById('inp_title').value = file.suggested_title || "";
         document.getElementById('inp_artist').value = file.suggested_artist || "";
+        document.getElementById('inp_direction').value = defaultDirection;
         
         // Load Image
         document.getElementById('preview-img').src = `/api/staged/${file.id}/cover`;
