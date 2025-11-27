@@ -197,3 +197,13 @@ nav .badge {
     margin-left: 8px;
     vertical-align: text-bottom;
 }
+
+.ctx-item {
+    padding: 10px 20px;
+    cursor: pointer;
+    color: #e0e0e0;
+}
+.ctx-item:hover {
+    background-color: var(--accent);
+    color: white;
+}

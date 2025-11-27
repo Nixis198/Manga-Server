@@ -95,10 +95,8 @@ def get_staged_cover(file_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/library")
 def get_library(db: Session = Depends(get_db)):
-    """
-    Returns the main library galleries (Already imported).
-    """
     galleries = db.query(database.Gallery).all()
+    # We return the data; SQLAlchemy relationships handle the category/series names
     return galleries
 
 @app.post("/api/import/{staged_id}")
@@ -160,3 +158,49 @@ def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
         
     db.commit()
     return {"status": "updated", "current_status": gallery.status}
+
+@app.post("/api/gallery/{gallery_id}/update")
+def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
+    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    
+    # 1. Update basic fields
+    gallery.title = request.title # type: ignore
+    gallery.artist = request.artist # type: ignore
+    gallery.description = request.description # type: ignore
+    gallery.reading_direction = request.direction # type: ignore
+    
+    # 2. Update Series
+    if request.series:
+        series = db.query(database.Series).filter(database.Series.name == request.series).first()
+        if not series:
+            series = database.Series(name=request.series)
+            db.add(series)
+            db.flush()
+        gallery.series_id = series.id
+    else:
+        gallery.series_id = None # type: ignore
+
+    # 3. Update Category
+    if request.category:
+        cat = db.query(database.Category).filter(database.Category.name == request.category).first()
+        if not cat:
+            cat = database.Category(name=request.category)
+            db.add(cat)
+            db.flush()
+        gallery.category_id = cat.id
+    else:
+        gallery.category_id = None # type: ignore
+
+    # 4. Update Tags (Clear and Re-add)
+    gallery.tags.clear()
+    for tag_name in request.tags:
+        tag = db.query(database.Tag).filter(database.Tag.name == tag_name).first()
+        if not tag:
+            tag = database.Tag(name=tag_name)
+            db.add(tag)
+        gallery.tags.append(tag)
+
+    db.commit()
+    return {"status": "success"}

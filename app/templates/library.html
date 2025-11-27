@@ -9,15 +9,76 @@
 
     <div class="grid" id="gallery-grid">
         {% for gallery in galleries %}
-        <div class="card" onclick="window.location.href='/reader/{{ gallery.id }}'">
+        <div class="card" 
+             data-id="{{ gallery.id }}"
+             data-title="{{ gallery.title }}"
+             data-artist="{{ gallery.artist }}"
+             data-series="{{ gallery.series.name if gallery.series else '' }}"
+             data-category="{{ gallery.category.name if gallery.category else '' }}"
+             data-tags="{{ gallery.tags|map(attribute='name')|join(', ') }}"
+             data-desc="{{ gallery.description }}"
+             onclick="window.location.href='/reader/{{ gallery.id }}'">
+            
             <img src="/thumbnails/{{ gallery.id }}.jpg" loading="lazy" alt="Cover">
             <div class="card-body">
+                {% if gallery.category %}
+                <span class="badge" style="float:right; background:#555;">{{ gallery.category.name }}</span>
+                {% endif %}
+                
                 <span class="badge status-{{ gallery.status|lower }}">{{ gallery.status }}</span>
                 <div class="card-title" title="{{ gallery.title }}">{{ gallery.title }}</div>
                 <div class="card-artist">{{ gallery.artist }}</div>
             </div>
         </div>
         {% endfor %}
+    </div>
+
+    <div id="context-menu" style="display:none; position:fixed; z-index:1000; background:#333; border:1px solid #555; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+        <div class="ctx-item" onclick="openReaderFromCtx()">Read</div>
+        <div class="ctx-item" onclick="openEditModal()">Edit Metadata</div>
+    </div>
+
+    <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
+        <div style="background:#2d2d2d; padding:20px; border-radius:8px; width:500px; max-width:90%;">
+            <h2>Edit Metadata</h2>
+            <input type="hidden" id="edit_id">
+            
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Title</label>
+                <input type="text" id="edit_title" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+            </div>
+            
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Artist</label>
+                <input type="text" id="edit_artist" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+            </div>
+
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1;">
+                    <label style="display:block; color:#aaa; font-size:0.8rem;">Category</label>
+                    <input type="text" id="edit_category" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                </div>
+                <div style="flex:1;">
+                    <label style="display:block; color:#aaa; font-size:0.8rem;">Series</label>
+                    <input type="text" id="edit_series" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                </div>
+            </div>
+
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Tags</label>
+                <input type="text" id="edit_tags" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+            </div>
+
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Description</label>
+                <textarea id="edit_desc" rows="3" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;"></textarea>
+            </div>
+            
+            <div style="text-align:right; margin-top:20px;">
+                <button onclick="closeEditModal()" style="background:#555; color:white; border:none; padding:8px 15px; cursor:pointer; margin-right:10px;">Cancel</button>
+                <button onclick="saveEdit()" style="background:#2ecc71; color:white; border:none; padding:8px 15px; cursor:pointer;">Save Changes</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -35,5 +96,90 @@
                 }
             });
         });
+
+        let selectedGallery = null; // Stores data of the gallery right-clicked
+
+    // 1. Context Menu Logic
+    document.addEventListener('contextmenu', event => {
+        const card = event.target.closest('.card');
+        if (card) {
+            event.preventDefault();
+            const id = card.dataset.id; // We need to add data-id to the card HTML
+            
+            // Find gallery data from the 'galleries' json injected by Jinja
+            // Since we can't easily access Jinja loop data in JS, 
+            // we will parse it from data attributes we add to the card.
+            selectedGallery = {
+                id: id,
+                title: card.querySelector('.card-title').innerText,
+                artist: card.querySelector('.card-artist').innerText,
+                // For detailed fields, we might need to fetch or store them in hidden fields
+                // For now, let's fetch fresh data when opening modal
+            };
+
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = `${event.pageX}px`;
+            menu.style.top = `${event.pageY}px`;
+        } else {
+            document.getElementById('context-menu').style.display = 'none';
+        }
+    });
+
+    // Close menu on click elsewhere
+    document.addEventListener('click', () => {
+        document.getElementById('context-menu').style.display = 'none';
+    });
+
+    function openReaderFromCtx() {
+        if(selectedGallery) window.location.href = `/reader/${selectedGallery.id}`;
+    }
+
+    // 2. Edit Modal Logic
+    async function openEditModal() {
+        if(!selectedGallery) return;
+        
+        // We need detailed data (tags, desc, etc.) which might not be on the card.
+        // Let's create a quick API endpoint to get single gallery details or pass full data in template.
+        // For simplicity, we will just use what we have and maybe reload.
+        // Actually, let's just cheat and pass the data via data-attributes on the card in the HTML loop.
+        
+        const card = document.querySelector(`.card[data-id="${selectedGallery.id}"]`);
+        
+        document.getElementById('edit_id').value = selectedGallery.id;
+        document.getElementById('edit_title').value = card.dataset.title;
+        document.getElementById('edit_artist').value = card.dataset.artist;
+        document.getElementById('edit_series').value = card.dataset.series;
+        document.getElementById('edit_category').value = card.dataset.category;
+        document.getElementById('edit_tags').value = card.dataset.tags;
+        document.getElementById('edit_desc').value = card.dataset.desc;
+
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    async function saveEdit() {
+        const id = document.getElementById('edit_id').value;
+        const payload = {
+            title: document.getElementById('edit_title').value,
+            artist: document.getElementById('edit_artist').value,
+            series: document.getElementById('edit_series').value,
+            category: document.getElementById('edit_category').value,
+            tags: document.getElementById('edit_tags').value.split(',').map(t=>t.trim()),
+            description: document.getElementById('edit_desc').value,
+            direction: "LTR" // Defaulting to LTR for now, add dropdown if needed
+        };
+
+        await fetch(`/api/gallery/${id}/update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        location.reload(); // Reload to show changes
+    }
     </script>
 {% endblock %}

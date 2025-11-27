@@ -21,6 +21,12 @@ gallery_tags = Table('gallery_tags', Base.metadata,
 
 # --- Models ---
 
+class Category(Base):
+    __tablename__ = "categories"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    galleries = relationship("Gallery", back_populates="category")
+
 class Settings(Base):
     __tablename__ = "settings"
     key = Column(String, primary_key=True, index=True)
@@ -47,26 +53,25 @@ class Gallery(Base):
     
     # File Info
     filename = Column(String, index=True)
-    path = Column(String) # Path inside /data/library
-    
-    # Metadata
+    path = Column(String)
     title = Column(String, index=True)
     artist = Column(String, index=True)
     circle = Column(String, nullable=True)
     parody = Column(String, nullable=True)
     description = Column(Text, nullable=True)
-    
-    # Reader Status
-    status = Column(String, default="New") # New, Reading, Completed
-    pages_read = Column(Integer, default=0)
-    pages_total = Column(Integer, default=0)
-    
-    # Settings specific to this gallery
-    reading_direction = Column(String, default="LTR") # RTL (Manga) or LTR (Comic)
+    status = Column(String, default="New")
+    pages_read = Column(Integer, default=0) # type: ignore
+    pages_total = Column(Integer, default=0) # type: ignore
+    reading_direction = Column(String, default="LTR")
     
     # Relationships
     series_id = Column(Integer, ForeignKey('series.id'), nullable=True)
     series = relationship("Series", back_populates="galleries")
+    
+    # Category Relationship
+    category_id = Column(Integer, ForeignKey('categories.id'), nullable=True)
+    category = relationship("Category", back_populates="galleries")
+    
     tags = relationship("Tag", secondary=gallery_tags, backref="galleries")
 
 class StagedFile(Base):

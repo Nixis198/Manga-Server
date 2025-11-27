@@ -40,21 +40,28 @@
                         <input type="text" id="inp_artist" required>
                     </div>
 
-                    <div class="form-group-row">
-                        <div class="form-group">
-                            <label>Series (Optional)</label>
-                            <input type="text" id="inp_series" list="series-list">
-                            <datalist id="series-list">
-                                </datalist>
+                        <div class="form-group-row">
+                            <div class="form-group">
+                                <label>Series (Optional)</label>
+                                <input type="text" id="inp_series" list="series-list">
+                                <datalist id="series-list"></datalist>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Category</label>
+                                <input type="text" id="inp_category" list="category-list" placeholder="Manga, Doujinshi...">
+                                <datalist id="category-list">
+                                    </datalist>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Reading Direction</label>
+                                <select id="inp_direction">
+                                    <option value="LTR" selected>Left to Right</option>
+                                    <option value="RTL">Right to Left</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Reading Direction</label>
-                            <select id="inp_direction">
-                                <option value="LTR" selected>Left to Right</option>
-                                <option value="RTL">Right to Left</option>
-                            </select>
-                        </div>
-                    </div>
 
                     <div class="form-group">
                         <label>Tags (Comma separated)</label>
@@ -218,6 +225,7 @@
             title: document.getElementById('inp_title').value,
             artist: document.getElementById('inp_artist').value,
             series: document.getElementById('inp_series').value,
+            category: document.getElementById('inp_category').value,
             direction: document.getElementById('inp_direction').value,
             description: document.getElementById('inp_desc').value,
             tags: document.getElementById('inp_tags').value.split(',').map(t => t.trim()).filter(t => t)

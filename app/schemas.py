@@ -7,4 +7,5 @@ class ImportRequest(BaseModel):
     description: Optional[str] = None
     direction: str = "LTR"
     series: Optional[str] = None
+    category: Optional[str] = None
     tags: List[str] = []

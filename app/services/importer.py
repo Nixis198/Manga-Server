@@ -40,6 +40,17 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
             db.flush()
             series_id = new_series.id
 
+    category_id = None
+    if meta.category:
+        existing_cat = db.query(database.Category).filter(database.Category.name == meta.category).first()
+        if existing_cat:
+            category_id = existing_cat.id
+        else:
+            new_cat = database.Category(name=meta.category)
+            db.add(new_cat)
+            db.flush()
+            category_id = new_cat.id
+
     # 4. Create Gallery DB Entry
     new_gallery = database.Gallery(
         filename=filename,
@@ -49,6 +60,7 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
         description=meta.description,
         reading_direction=meta.direction,
         series_id=series_id,
+        category_id=category_id,
         status="New",
         pages_total=0 # Default to 0, we update it later
     )
