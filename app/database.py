@@ -42,6 +42,7 @@ class Series(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     description = Column(Text, nullable=True)
+    thumbnail_url = Column(String, nullable=True)
     
     # Relationship to get all galleries in this series
     galleries = relationship("Gallery", back_populates="series")
@@ -67,6 +68,8 @@ class Gallery(Base):
     # Relationships
     series_id = Column(Integer, ForeignKey('series.id'), nullable=True)
     series = relationship("Series", back_populates="galleries")
+
+    sort_order = Column(Integer, default=0)
     
     # Category Relationship
     category_id = Column(Integer, ForeignKey('categories.id'), nullable=True)

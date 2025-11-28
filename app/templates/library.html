@@ -12,38 +12,57 @@
         </div>
 
 <div class="grid" id="gallery-grid">
-        {% for gallery in galleries %}
+        {% for item in galleries %}
+        
+        {% if item.type == 'series' %}
         <div class="card" 
-             data-id="{{ gallery.id }}"
-             data-title="{{ gallery.title }}"
-             data-artist="{{ gallery.artist }}"
-             data-series="{{ gallery.series.name if gallery.series else '' }}"
-             data-category="{{ gallery.category.name if gallery.category else '' }}"
-             data-tags="{{ gallery.tags|map(attribute='name')|join(', ') }}"
-             data-desc="{{ gallery.description }}"
-             onclick="window.location.href='/reader/{{ gallery.id }}'">
+             data-category="Series" 
+             onclick="window.location.href='/series/{{ item.id }}'">
             
-            <img src="/thumbnails/{{ gallery.id }}.jpg" loading="lazy" alt="Cover">
+            <div style="position: absolute; top: -5px; right: -5px; bottom: 5px; left: 5px; background: #333; z-index: -1; border-radius: 8px; border: 1px solid #555;"></div>
+            
+            <img src="{{ item.thumb }}" loading="lazy" alt="Cover">
+            <div class="card-body">
+                <div class="card-title">{{ item.title }}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                    <div class="card-artist">Series</div>
+                    <span class="badge" style="background: var(--accent); float:none;">{{ item.status }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <div class="card" 
+             data-id="{{ item.id }}"
+             data-title="{{ item.title }}"
+             data-artist="{{ item.artist }}"
+             data-category="{{ item.category }}"
+             data-series="{{ item.series }}" 
+             data-tags="{{ item.tags|join(', ') }}" 
+             data-desc="{{ item.description }}"
+             onclick="window.location.href='/reader/{{ item.id }}'">
+            
+            <img src="{{ item.thumb }}" loading="lazy" alt="Cover">
             
             <div class="card-body">
-                <div class="card-title" title="{{ gallery.title }}">{{ gallery.title }}</div>
-                
+                <div class="card-title" title="{{ item.title }}">{{ item.title }}</div>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                    
                     <div class="card-artist" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px;">
-                        {{ gallery.artist }}
+                        {{ item.artist }}
                     </div>
-                    
                     <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                        <span class="badge status-{{ gallery.status|lower }}" style="float:none;">{{ gallery.status }}</span>
-                        
-                        {% if gallery.category %}
-                        <span class="badge" style="float:none; background:#555;">{{ gallery.category.name }}</span>
+                        {% if item.status %}
+                        <span class="badge status-{{ item.status|lower }}" style="float:none;">{{ item.status }}</span>
+                        {% endif %}
+                        {% if item.category %}
+                        <span class="badge" style="float:none; background:#555;">{{ item.category }}</span>
                         {% endif %}
                     </div>
                 </div>
             </div>
         </div>
+        {% endif %}
+        
         {% endfor %}
     </div>
 
@@ -188,6 +207,9 @@
         document.addEventListener('contextmenu', event => {
             const card = event.target.closest('.card');
             if (card) {
+                // FIX: If it's a Series card, do not show the menu
+                if (card.dataset.category === 'Series') return;
+
                 event.preventDefault();
                 selectedGallery = { id: card.dataset.id };
                 const menu = document.getElementById('context-menu');

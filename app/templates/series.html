@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}{{ series.name }}{% endblock %}
+
+{% block content %}
+<div style="padding: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div>
+            <a href="/" style="color: #888; text-decoration: none;">&larr; Back to Library</a>
+            <h1 style="margin-top: 5px;">{{ series.name }}</h1>
+        </div>
+        <button class="btn-small" onclick="toggleSeriesSettings()">Series Settings</button>
+    </div>
+
+    <div id="series-settings" style="display: none; background: #2d2d2d; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444;">
+        <h3>Series Settings</h3>
+        
+        <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 250px;">
+                <label style="display:block; color:#aaa; margin-bottom:5px;">Series Name</label>
+                <input type="text" id="inp_name" value="{{ series.name }}" style="width: 100%; padding: 8px;">
+            </div>
+
+            <div style="flex: 1; min-width: 250px;">
+                <label style="display:block; color:#aaa; margin-bottom:5px;">Series Thumbnail</label>
+                <select id="inp_thumb" style="width: 100%; padding: 8px;">
+                    <option value="">(Default - First Gallery)</option>
+                    {% for g in galleries %}
+                    <option value="/thumbnails/{{g.id}}.jpg" {% if series.thumbnail_url == '/thumbnails/' ~ g.id ~ '.jpg' %}selected{% endif %}>
+                        {{ g.title }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <button class="btn-small" onclick="toggleReorderMode()" style="background: #e67e22;">Manage Sort Order</button>
+            <button class="btn-save" onclick="saveSeriesSettings()" style="width: auto;">Save Settings</button>
+        </div>
+
+        <div id="reorder-tool" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #444;">
+            <div style="background: #222; padding: 10px; border-radius: 5px; display: flex; align-items: center; gap: 10px;">
+                <span style="color: #aaa;">Order:</span>
+                <button class="btn-small" onclick="saveOrder()" style="background: var(--accent);">Save New Order</button>
+                <div style="font-size: 0.8rem; color: #666;">Enter numbers below to reorder.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid">
+        {% for gallery in galleries %}
+        <div class="card" 
+             data-id="{{ gallery.id }}"
+             data-title="{{ gallery.title }}"
+             data-artist="{{ gallery.artist }}"
+             data-series="{{ series.name }}"
+             data-category="{{ gallery.category.name if gallery.category else '' }}"
+             data-tags="{{ gallery.tags|map(attribute='name')|join(', ') }}" 
+             data-desc="{{ gallery.description }}"
+             onclick="window.location.href='/reader/{{ gallery.id }}'">
+            
+            <img src="/thumbnails/{{ gallery.id }}.jpg" loading="lazy" alt="Cover">
+            
+            <div class="card-body">
+                <div class="card-title">{{ gallery.title }}</div>
+                
+                <div style="margin-top: 5px; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="card-artist">{{ gallery.artist }}</div>
+                    
+                    <div class="sort-ui" onclick="event.stopPropagation()" style="display: none;">
+                        <input type="number" class="sort-input" value="{{ gallery.sort_order }}" 
+                               style="width: 50px; padding: 4px; background: #111; border: 1px solid #444; color: white; text-align: center;">
+                    </div>
+
+                    <div class="badges-ui" style="display: flex; gap: 4px;">
+                        <span class="badge status-{{ gallery.status|lower }}" style="float:none;">{{ gallery.status }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div id="context-menu" style="display:none; position:fixed; z-index:1000; background:#333; border:1px solid #555; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+        <div class="ctx-item" onclick="openReaderFromCtx()">Read</div>
+        <div class="ctx-item" onclick="openEditModal()">Edit Metadata</div>
+    </div>
+
+    <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
+        <div style="background:#2d2d2d; padding:20px; border-radius:8px; width:500px; max-width:90%;">
+            <h2>Edit Metadata</h2>
+            <input type="hidden" id="edit_id">
+            
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Title</label>
+                <input type="text" id="edit_title" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+            </div>
+            
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Artist</label>
+                <input type="text" id="edit_artist" list="list-artists" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+            </div>
+
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1;">
+                    <label style="display:block; color:#aaa; font-size:0.8rem;">Category</label>
+                    <select id="edit_category" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                        <option value="">(None)</option>
+                    </select>
+                </div>
+                <div style="flex:1;">
+                    <label style="display:block; color:#aaa; font-size:0.8rem;">Series</label>
+                    <input type="text" id="edit_series" list="list-series" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                </div>
+            </div>
+
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Tags</label>
+                <input type="text" id="edit_tags" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+            </div>
+
+            <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Description</label>
+                <textarea id="edit_desc" rows="3" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;"></textarea>
+            </div>
+            
+            <div style="text-align:right; margin-top:20px;">
+                <button onclick="closeEditModal()" style="background:#555; color:white; border:none; padding:8px 15px; cursor:pointer; margin-right:10px;">Cancel</button>
+                <button onclick="saveEdit()" style="background:#2ecc71; color:white; border:none; padding:8px 15px; cursor:pointer;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <datalist id="list-artists"></datalist>
+    <datalist id="list-series"></datalist>
+
+</div>
+
+<script>
+    // --- SERIES SETTINGS ---
+    function toggleSeriesSettings() {
+        const el = document.getElementById('series-settings');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function toggleReorderMode() {
+        const tool = document.getElementById('reorder-tool');
+        const inputs = document.querySelectorAll('.sort-ui');
+        const badges = document.querySelectorAll('.badges-ui');
+
+        const isVisible = tool.style.display === 'block';
+
+        if (isVisible) {
+            tool.style.display = 'none';
+            inputs.forEach(el => el.style.display = 'none');
+            badges.forEach(el => el.style.display = 'flex');
+        } else {
+            tool.style.display = 'block';
+            inputs.forEach(el => el.style.display = 'block');
+            badges.forEach(el => el.style.display = 'none');
+        }
+    }
+
+    async function saveSeriesSettings() {
+        const name = document.getElementById('inp_name').value;
+        const thumb = document.getElementById('inp_thumb').value;
+
+        const res = await fetch(`/api/series/{{ series.id }}/update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name, thumbnail_url: thumb })
+        });
+        if(res.ok) location.reload();
+    }
+
+    async function saveOrder() {
+        const inputs = document.querySelectorAll('.sort-input');
+        const list = [];
+        inputs.forEach(input => {
+            const card = input.closest('.card');
+            const id = parseInt(card.dataset.id);
+            const val = parseInt(input.value);
+            list.push({id: id, val: val});
+        });
+        list.sort((a, b) => a.val - b.val);
+        const idList = list.map(x => x.id);
+
+        const res = await fetch(`/api/series/{{ series.id }}/update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ order: idList })
+        });
+        if(res.ok) location.reload();
+    }
+
+    // --- CONTEXT MENU & EDIT LOGIC ---
+    let selectedGallery = null;
+
+    document.addEventListener('contextmenu', event => {
+        const card = event.target.closest('.card');
+        if (card) {
+            event.preventDefault();
+            selectedGallery = { id: card.dataset.id };
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = `${event.pageX}px`;
+            menu.style.top = `${event.pageY}px`;
+        } else {
+            document.getElementById('context-menu').style.display = 'none';
+        }
+    });
+
+    document.addEventListener('click', () => {
+        document.getElementById('context-menu').style.display = 'none';
+    });
+
+    function openReaderFromCtx() {
+        if(selectedGallery) window.location.href = `/reader/${selectedGallery.id}`;
+    }
+
+    // --- EDIT MODAL LOGIC (Duplicated from Library) ---
+    async function openEditModal() {
+        if(!selectedGallery) return;
+        
+        // Populate Categories
+        const res = await fetch('/api/categories');
+        const cats = await res.json();
+        const select = document.getElementById('edit_category');
+        select.innerHTML = '<option value="">(None)</option>';
+        cats.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.name;
+            opt.innerText = cat.name;
+            select.appendChild(opt);
+        });
+
+        // Fill Form
+        const card = document.querySelector(`.card[data-id="${selectedGallery.id}"]`);
+        document.getElementById('edit_id').value = selectedGallery.id;
+        document.getElementById('edit_title').value = card.dataset.title;
+        document.getElementById('edit_artist').value = card.dataset.artist;
+        document.getElementById('edit_series').value = card.dataset.series;
+        document.getElementById('edit_category').value = card.dataset.category;
+        document.getElementById('edit_tags').value = card.dataset.tags;
+        document.getElementById('edit_desc').value = card.dataset.desc;
+
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    async function saveEdit() {
+        const id = document.getElementById('edit_id').value;
+        const payload = {
+            title: document.getElementById('edit_title').value,
+            artist: document.getElementById('edit_artist').value,
+            series: document.getElementById('edit_series').value,
+            category: document.getElementById('edit_category').value,
+            tags: document.getElementById('edit_tags').value.split(',').map(t=>t.trim()),
+            description: document.getElementById('edit_desc').value,
+            direction: "LTR" 
+        };
+
+        await fetch(`/api/gallery/${id}/update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        location.reload(); 
+    }
+
+    // --- AUTOCOMPLETE LOGIC ---
+    async function loadAutocomplete() {
+        try {
+            const res = await fetch('/api/autocomplete');
+            const data = await res.json();
+            
+            const artistList = document.getElementById('list-artists');
+            const seriesList = document.getElementById('list-series');
+            artistList.innerHTML = '';
+            seriesList.innerHTML = '';
+            
+            data.artists.forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a;
+                artistList.appendChild(opt);
+            });
+            data.series.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s;
+                seriesList.appendChild(opt);
+            });
+        } catch(e) { console.log("Autocomplete load error", e); }
+    }
+
+    // Init
+    loadAutocomplete();
+</script>
+{% endblock %}

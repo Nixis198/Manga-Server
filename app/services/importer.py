@@ -20,20 +20,11 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
 
     logger.info(f"Starting Import: {meta.title} by {meta.artist}")
 
-    # 2. Define Paths
-    # Sanitize inputs
-    safe_artist = "".join([c for c in meta.artist if c.isalpha() or c.isdigit() or c in " -_"]).strip()
-    
-    dest_folder = os.path.join(data_dir, "library", safe_artist)
-    os.makedirs(dest_folder, exist_ok=True)
-    
-    source_path = str(staged_file.path)
-    filename = os.path.basename(source_path)
-    dest_path = os.path.join(dest_folder, filename)
-
     # 3. Handle Series (Find existing or Create new)
     series_id = None
-    if meta.series:
+    safe_series_name = ""
+
+    if meta.series and meta.series.strip():
         existing_series = db.query(database.Series).filter(database.Series.name == meta.series).first()
         if existing_series:
             series_id = existing_series.id
@@ -42,6 +33,27 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
             db.add(new_series)
             db.flush()
             series_id = new_series.id
+
+        # Sanitize for folder name
+        safe_series_name = "".join([c for c in meta.series if c.isalpha() or c.isdigit() or c in " -_"]).strip()
+
+    # 2. Define Paths
+    # Sanitize inputs
+    safe_artist = "".join([c for c in meta.artist if c.isalpha() or c.isdigit() or c in " -_"]).strip()
+    
+    # LOGIC: If series exists, add it to path.
+    if safe_series_name:
+        dest_folder = os.path.join(data_dir, "library", safe_artist, safe_series_name)
+    else:
+        dest_folder = os.path.join(data_dir, "library", safe_artist)
+        
+    os.makedirs(dest_folder, exist_ok=True)
+    
+    source_path = str(staged_file.path)
+    filename = os.path.basename(source_path)
+    dest_path = os.path.join(dest_folder, filename)
+
+    
 
     # Handle Category
     category_id = None
@@ -66,7 +78,8 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
         series_id=series_id,
         category_id=category_id,
         status="New",
-        pages_total=0 
+        pages_total=0,
+        sort_order=0
     )
     
     # 5. Handle Tags

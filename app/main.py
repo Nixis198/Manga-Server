@@ -89,12 +89,62 @@ templates = Jinja2Templates(directory="app/templates")
 
 @app.get("/")
 def read_root(request: Request, db: Session = Depends(get_db)):
-    # Fetch all galleries
-    galleries = db.query(database.Gallery).all()
-    # Render the library.html template
+    """
+    Serves the Library HTML page.
+    CRITICAL FIX: We must process the data into 'items' (Dictionaries) here,
+    just like we do in the API. If we pass raw DB objects, the frontend breaks.
+    """
+    items = []
+    
+    # 1. Get Standalone Galleries (series_id is None)
+    standalone = db.query(database.Gallery).filter(database.Gallery.series_id == None).all()
+    
+    for g in standalone:
+        items.append({
+            "type": "gallery",
+            "id": g.id,
+            "title": g.title,
+            "artist": g.artist,
+            "status": g.status,
+            "category": g.category.name if g.category else "",
+            "thumb": f"/thumbnails/{g.id}.jpg",
+            "series": "", 
+            "tags": [t.name for t in g.tags],
+            "description": g.description if g.description else "" # type: ignore
+        })
+
+    # 2. Get Series
+    all_series = db.query(database.Series).all()
+    
+    for s in all_series:
+        if not s.galleries:
+            continue
+            
+        # Determine Series Thumbnail
+        if s.thumbnail_url: # type: ignore
+            thumb = s.thumbnail_url
+        else:
+            # Use the first gallery's thumb (Sorted by order or ID)
+            first = sorted(s.galleries, key=lambda x: (x.sort_order, x.id))[0]
+            thumb = f"/thumbnails/{first.id}.jpg"
+            
+        items.append({
+            "type": "series",
+            "id": s.id,
+            "title": s.name,
+            "artist": "Various", 
+            "status": f"{len(s.galleries)} Items", 
+            "category": "Series",
+            "thumb": thumb,
+            "series": s.name, # This ensures the edit modal sees the NAME, not the object
+            "tags": [],
+            "description": s.description if s.description else "" # type: ignore
+        })
+        
+    # Render the library.html template with the PROCESSED items
     return templates.TemplateResponse("library.html", {
         "request": request, 
-        "galleries": galleries
+        "galleries": items # We pass 'items' but call it 'galleries' to match the loop in HTML
     })
 
 @app.post("/api/scan")
@@ -136,9 +186,58 @@ def get_staged_cover(file_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/library")
 def get_library(db: Session = Depends(get_db)):
-    galleries = db.query(database.Gallery).all()
-    # We return the data; SQLAlchemy relationships handle the category/series names
-    return galleries
+    """
+    Returns Galleries (if standalone) AND Series (as groups).
+    Returns Dictionaries, not SQLAlchemy Objects.
+    """
+    items = []
+    
+    # 1. Get Standalone Galleries (series_id is None)
+    standalone = db.query(database.Gallery).filter(database.Gallery.series_id == None).all()
+    for g in standalone:
+        items.append({
+            "type": "gallery",
+            "id": g.id,
+            "title": g.title,
+            "artist": g.artist,
+            "status": g.status,
+            "category": g.category.name if g.category else "",
+            "thumb": f"/thumbnails/{g.id}.jpg",
+            "series": "", # Empty string for standalone
+            "tags": [t.name for t in g.tags], # List of strings
+            "description": g.description if g.description else "" # type: ignore
+        })
+
+    # 2. Get Series
+    all_series = db.query(database.Series).all()
+    for s in all_series:
+        if not s.galleries:
+            continue
+            
+        # Determine Series Thumbnail
+        if s.thumbnail_url: # type: ignore
+            thumb = s.thumbnail_url
+        else:
+            # Use the first gallery's thumb
+            # Sort by sort_order (if set) or ID
+            first = sorted(s.galleries, key=lambda x: (x.sort_order, x.id))[0]
+            thumb = f"/thumbnails/{first.id}.jpg"
+            
+        items.append({
+            "type": "series",
+            "id": s.id,
+            "title": s.name,
+            "artist": "Various", 
+            "status": f"{len(s.galleries)} Items", 
+            "category": "Series",
+            "thumb": thumb,
+            # Extra fields to prevent frontend errors
+            "series": s.name,
+            "tags": [],
+            "description": s.description if s.description else "" # type: ignore
+        })
+        
+    return items
 
 @app.post("/api/import/{staged_id}")
 def import_comic(staged_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
@@ -577,3 +676,42 @@ async def upload_gallery(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    
+    # --- SERIES API ---
+
+@app.get("/series/{series_id}")
+def view_series_page(series_id: int, request: Request, db: Session = Depends(get_db)):
+    series = db.query(database.Series).filter(database.Series.id == series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+        
+    # Sort galleries by our new sort_order column
+    galleries = sorted(series.galleries, key=lambda x: (x.sort_order, x.id))
+    
+    return templates.TemplateResponse("series.html", {
+        "request": request, 
+        "series": series, 
+        "galleries": galleries
+    })
+
+@app.post("/api/series/{series_id}/update")
+def update_series(series_id: int, payload: dict, db: Session = Depends(get_db)):
+    series = db.query(database.Series).filter(database.Series.id == series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Series not found")
+
+    if "name" in payload:
+        series.name = payload["name"]
+        
+    # NEW: Handle Thumbnail Update
+    if "thumbnail_url" in payload:
+        series.thumbnail_url = payload["thumbnail_url"]
+    
+    if "order" in payload:
+        for idx, gal_id in enumerate(payload["order"]):
+            gal = next((g for g in series.galleries if g.id == int(gal_id)), None)
+            if gal:
+                gal.sort_order = idx + 1 
+                
+    db.commit()
+    return {"status": "success"}

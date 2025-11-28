@@ -57,6 +57,7 @@ nav a:hover { color: var(--accent); }
     transition: transform 0.2s;
     cursor: pointer;
     box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    position: relative;
 }
 
 .card:hover { transform: translateY(-5px); }
