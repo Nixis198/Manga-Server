@@ -185,14 +185,25 @@
         document.getElementById('editor-panel').style.display = 'block';
         document.getElementById('empty-state').style.display = 'none';
 
-        // Fill Form
+        // Fill ID & Filename
         document.getElementById('staged_id').value = file.id;
         document.getElementById('file-name-display').innerText = file.filename;
         
-        // Auto-fill form
+        // Auto-fill form from Scanner Guesses
         document.getElementById('inp_title').value = file.suggested_title || "";
         document.getElementById('inp_artist').value = file.suggested_artist || "";
-        document.getElementById('inp_direction').value = defaultDirection;
+        
+        // --- FIX: Explicitly Clear Optional Fields ---
+        // This prevents data from the previous selection sticking around
+        document.getElementById('inp_series').value = ""; 
+        document.getElementById('inp_category').value = "";
+        document.getElementById('inp_tags').value = "";
+        document.getElementById('inp_desc').value = "";
+
+        // Reset Direction to Default (read from settings)
+        if (typeof defaultDirection !== 'undefined') {
+            document.getElementById('inp_direction').value = defaultDirection;
+        }
         
         // Load Image
         document.getElementById('preview-img').src = `/api/staged/${file.id}/cover`;

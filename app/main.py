@@ -320,64 +320,75 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
         raise HTTPException(status_code=404, detail="Gallery not found")
     
     old_title = gallery.title
-    old_artist = gallery.artist
     
-    # --- LOGIC: Move File if Artist Changed ---
-    if request.artist != old_artist:
-        try:
-            # 1. Calculate New Path
-            safe_new_artist = "".join([c for c in request.artist if c.isalpha() or c.isdigit() or c in " -_"]).strip()
+    # --- 1. FILE MOVEMENT LOGIC ---
+    # We calculate the target path based on the NEW metadata (Artist + Series)
+    try:
+        # A. Sanitize New Artist
+        safe_new_artist = "".join([c for c in request.artist if c.isalpha() or c.isdigit() or c in " -_"]).strip()
+        
+        # B. Sanitize New Series (if provided)
+        safe_new_series = ""
+        if request.series:
+            safe_new_series = "".join([c for c in request.series if c.isalpha() or c.isdigit() or c in " -_"]).strip()
+
+        # C. Construct Target Folder
+        # Logic: Library / Artist / [Series] / File.zip
+        if safe_new_series:
+            new_folder = os.path.join(LIBRARY_DIR, safe_new_artist, safe_new_series)
+        else:
             new_folder = os.path.join(LIBRARY_DIR, safe_new_artist)
-            
-            # Get current filename
-            filename = os.path.basename(gallery.path) # type: ignore
-            new_path = os.path.join(new_folder, filename)
-            
-            # Only proceed if the resulting path is actually different
-            if new_path != gallery.path:
-                logger.info(f"Artist changed. Moving file from '{gallery.path}' to '{new_path}'")
-                
-                # Create new folder
-                os.makedirs(new_folder, exist_ok=True)
-                
-                # Move the file
-                shutil.move(gallery.path, new_path) # type: ignore
-                
-                # Update DB Path
-                gallery.path = new_path # type: ignore
-                
-                # Cleanup: Try to delete the old folder if it's empty
-                old_folder = os.path.dirname(gallery.path) # type: ignore
-                
-        except Exception as e:
-            logger.error(f"Failed to move file during artist rename: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to move file: {e}")
 
-        # Cleanup Old Folder (Attempt)
-        # We perform this strictly on the folder we just moved FROM.
-        # We accept that we can't easily know the old folder path perfectly if we updated the DB object already,
-        # so let's use the 'old_artist' variable we saved at the top.
-        try:
-            # Reconstruct old folder path safely
-            safe_old_artist = "".join([c for c in old_artist if c.isalpha() or c.isdigit() or c in " -_"]).strip() # type: ignore
-            old_folder_path = os.path.join(LIBRARY_DIR, safe_old_artist)
+        # D. Construct Target File Path
+        filename = os.path.basename(gallery.path) # type: ignore
+        new_path = os.path.join(new_folder, filename)
+        
+        # E. Compare & Move
+        # If the path has changed (due to Artist change OR Series change), move it.
+        if new_path != gallery.path:
+            logger.info(f"Path change detected. Moving: '{gallery.path}' -> '{new_path}'")
             
-            # Check if empty
-            if os.path.exists(old_folder_path) and not os.listdir(old_folder_path):
-                os.rmdir(old_folder_path)
-                logger.info(f"Deleted empty folder: {old_folder_path}")
-        except Exception as e:
-            logger.warning(f"Could not cleanup old folder: {e}")
+            # Create new directory
+            os.makedirs(new_folder, exist_ok=True)
+            
+            # Move the file
+            shutil.move(gallery.path, new_path) # type: ignore
+            
+            # Save old path for cleanup
+            old_path = gallery.path
+            
+            # Update DB
+            gallery.path = new_path # type: ignore
+            
+            # Cleanup: Delete old folder if empty
+            # We check the folder the file USED to be in
+            old_dir = os.path.dirname(old_path) # type: ignore
+            try:
+                if os.path.exists(old_dir) and not os.listdir(old_dir):
+                    os.rmdir(old_dir)
+                    logger.info(f"Deleted empty folder: {old_dir}")
+                    
+                    # Optional: If we just deleted a Series folder, check if the Artist folder above it is empty too
+                    parent_dir = os.path.dirname(old_dir)
+                    if os.path.exists(parent_dir) and not os.listdir(parent_dir):
+                        os.rmdir(parent_dir)
+                        logger.info(f"Deleted empty parent folder: {parent_dir}")
+            except Exception as e:
+                logger.warning(f"Cleanup warning: {e}")
 
-    # --- End Move Logic ---
+    except Exception as e:
+        logger.error(f"Failed to move file during metadata update: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to move file: {e}")
 
-    # 1. Update basic fields
+    # --- 2. METADATA UPDATES ---
+
+    # Update basic fields
     gallery.title = request.title # type: ignore
-    gallery.artist = request.artist # type: ignore # Update DB Artist
+    gallery.artist = request.artist # type: ignore
     gallery.description = request.description # type: ignore
     gallery.reading_direction = request.direction # type: ignore
     
-    # 2. Update Series
+    # Update Series
     if request.series:
         series = db.query(database.Series).filter(database.Series.name == request.series).first()
         if not series:
@@ -388,7 +399,7 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.series_id = None # type: ignore
 
-    # 3. Update Category
+    # Update Category
     if request.category:
         cat = db.query(database.Category).filter(database.Category.name == request.category).first()
         if not cat:
@@ -399,7 +410,7 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.category_id = None # type: ignore
 
-    # 4. Update Tags
+    # Update Tags
     gallery.tags.clear()
     for tag_name in request.tags:
         tag = db.query(database.Tag).filter(database.Tag.name == tag_name).first()
