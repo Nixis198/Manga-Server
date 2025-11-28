@@ -24,9 +24,21 @@
             <img src="{{ item.thumb }}" loading="lazy" alt="Cover">
             <div class="card-body">
                 <div class="card-title">{{ item.title }}</div>
+                
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
                     <div class="card-artist">Series</div>
-                    <span class="badge" style="background: var(--accent); float:none;">{{ item.status }}</span>
+                    
+                    <div style="display: flex; gap: 4px;">
+                        <span class="badge" style="background: #555; float:none;">{{ item.count }} Items</span>
+
+                        {% if item.read_count == item.count %}
+                            <span class="badge status-completed" style="float:none;">Completed</span>
+                        {% elif item.read_count == 0 %}
+                            <span class="badge status-new" style="float:none;">New</span>
+                        {% else %}
+                            <span class="badge status-reading" style="float:none;">{{ item.read_count }} / {{ item.count }}</span>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>

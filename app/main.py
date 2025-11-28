@@ -91,12 +91,10 @@ templates = Jinja2Templates(directory="app/templates")
 def read_root(request: Request, db: Session = Depends(get_db)):
     """
     Serves the Library HTML page.
-    CRITICAL FIX: We must process the data into 'items' (Dictionaries) here,
-    just like we do in the API. If we pass raw DB objects, the frontend breaks.
     """
     items = []
     
-    # 1. Get Standalone Galleries (series_id is None)
+    # 1. Get Standalone Galleries
     standalone = db.query(database.Gallery).filter(database.Gallery.series_id == None).all()
     
     for g in standalone:
@@ -124,27 +122,34 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         if s.thumbnail_url: # type: ignore
             thumb = s.thumbnail_url
         else:
-            # Use the first gallery's thumb (Sorted by order or ID)
             first = sorted(s.galleries, key=lambda x: (x.sort_order, x.id))[0]
             thumb = f"/thumbnails/{first.id}.jpg"
+        
+        # --- NEW MATH SECTION (Was missing here) ---
+        total_count = len(s.galleries)
+        read_count = sum(1 for g in s.galleries if g.status == "Completed")
             
         items.append({
             "type": "series",
             "id": s.id,
             "title": s.name,
             "artist": "Various", 
-            "status": f"{len(s.galleries)} Items", 
             "category": "Series",
             "thumb": thumb,
-            "series": s.name, # This ensures the edit modal sees the NAME, not the object
+            
+            # These are the fields the HTML needs:
+            "count": total_count,
+            "read_count": read_count, 
+            "status": "Series", 
+            
+            "series": s.name,
             "tags": [],
             "description": s.description if s.description else "" # type: ignore
         })
         
-    # Render the library.html template with the PROCESSED items
     return templates.TemplateResponse("library.html", {
         "request": request, 
-        "galleries": items # We pass 'items' but call it 'galleries' to match the loop in HTML
+        "galleries": items
     })
 
 @app.post("/api/scan")
@@ -203,8 +208,8 @@ def get_library(db: Session = Depends(get_db)):
             "status": g.status,
             "category": g.category.name if g.category else "",
             "thumb": f"/thumbnails/{g.id}.jpg",
-            "series": "", # Empty string for standalone
-            "tags": [t.name for t in g.tags], # List of strings
+            "series": "", 
+            "tags": [t.name for t in g.tags], 
             "description": g.description if g.description else "" # type: ignore
         })
 
@@ -219,19 +224,27 @@ def get_library(db: Session = Depends(get_db)):
             thumb = s.thumbnail_url
         else:
             # Use the first gallery's thumb
-            # Sort by sort_order (if set) or ID
             first = sorted(s.galleries, key=lambda x: (x.sort_order, x.id))[0]
             thumb = f"/thumbnails/{first.id}.jpg"
+        
+        # --- NEW MATH SECTION ---
+        total_count = len(s.galleries)
+        # Count how many galleries in this series are marked 'Completed'
+        read_count = sum(1 for g in s.galleries if g.status == "Completed")
             
         items.append({
             "type": "series",
             "id": s.id,
             "title": s.name,
             "artist": "Various", 
-            "status": f"{len(s.galleries)} Items", 
             "category": "Series",
             "thumb": thumb,
-            # Extra fields to prevent frontend errors
+            
+            # Send the raw numbers to the frontend
+            "count": total_count,
+            "read_count": read_count, 
+            "status": "Series", # Placeholder
+            
             "series": s.name,
             "tags": [],
             "description": s.description if s.description else "" # type: ignore
