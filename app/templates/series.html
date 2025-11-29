@@ -3,6 +3,8 @@
 {% block title %}{{ series.name }}{% endblock %}
 
 {% block content %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
 <div style="padding: 20px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div>
@@ -40,19 +42,31 @@
         </div>
 
         <div id="reorder-tool" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #444;">
-            <div style="background: #222; padding: 10px; border-radius: 5px; display: flex; align-items: center; gap: 10px;">
-                <span style="color: #aaa;">Order:</span>
-                <button class="btn-small" onclick="saveOrder()" style="background: var(--accent);">Save New Order</button>
-                <div style="font-size: 0.8rem; color: #666;">Enter numbers below to reorder.</div>
+            <div style="background: #222; padding: 15px; border-radius: 5px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <strong style="color: #fff;">Drag and Drop Mode Active</strong>
+                    <button class="btn-small" onclick="saveOrder()" style="background: var(--accent);">Save New Order</button>
+                </div>
+                
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span style="color: #aaa; font-size: 0.9rem;">Quick Sort:</span>
+                    <button class="btn-small" onclick="autoSort('title')">By Title</button>
+                    <button class="btn-small" onclick="autoSort('filename')">By Filename</button>
+                </div>
+                
+                <div style="font-size: 0.8rem; color: #888; margin-top: 10px;">
+                    Drag items to reorder. The numbers will update automatically. Click "Save New Order" when done.
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="grid">
+    <div class="grid" id="series-grid">
         {% for gallery in galleries %}
         <div class="card" 
              data-id="{{ gallery.id }}"
              data-title="{{ gallery.title }}"
+             data-filename="{{ gallery.filename }}"
              data-artist="{{ gallery.artist }}"
              data-series="{{ series.name }}"
              data-category="{{ gallery.category.name if gallery.category else '' }}"
@@ -69,8 +83,8 @@
                     <div class="card-artist">{{ gallery.artist }}</div>
                     
                     <div class="sort-ui" onclick="event.stopPropagation()" style="display: none;">
-                        <input type="number" class="sort-input" value="{{ gallery.sort_order }}" 
-                               style="width: 50px; padding: 4px; background: #111; border: 1px solid #444; color: white; text-align: center;">
+                        <input type="text" class="sort-input" value="{{ gallery.sort_order }}" disabled
+                               style="width: 30px; padding: 4px; background: #333; border: 1px solid #555; color: #fff; text-align: center; font-weight:bold; border-radius:50%;">
                     </div>
 
                     <div class="badges-ui" style="display: flex; gap: 4px;">
@@ -99,7 +113,7 @@
             
             <div style="margin-bottom:10px;">
                 <label style="display:block; color:#aaa; font-size:0.8rem;">Artist</label>
-                <input type="text" id="edit_artist" list="list-artists" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                <input type="text" id="edit_artist" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
             </div>
 
             <div style="display:flex; gap:10px; margin-bottom:10px;">
@@ -111,7 +125,7 @@
                 </div>
                 <div style="flex:1;">
                     <label style="display:block; color:#aaa; font-size:0.8rem;">Series</label>
-                    <input type="text" id="edit_series" list="list-series" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                    <input type="text" id="edit_series" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
                 </div>
             </div>
 
@@ -132,34 +146,120 @@
         </div>
     </div>
 
-    <datalist id="list-artists"></datalist>
-    <datalist id="list-series"></datalist>
-
 </div>
 
-<script>
-    // --- SERIES SETTINGS ---
-    function toggleSeriesSettings() {
-        const el = document.getElementById('series-settings');
-        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+<style>
+    /* Visual cue when an item is being dragged */
+    .sortable-ghost {
+        opacity: 0.4;
+        background-color: var(--accent);
     }
+    .sortable-drag {
+        cursor: grabbing;
+    }
+</style>
+
+<script>
+    // --- DRAG AND DROP LOGIC ---
+    let sortableInstance = null;
+    const gridEl = document.getElementById('series-grid');
 
     function toggleReorderMode() {
         const tool = document.getElementById('reorder-tool');
         const inputs = document.querySelectorAll('.sort-ui');
         const badges = document.querySelectorAll('.badges-ui');
+        const cards = document.querySelectorAll('.card');
 
         const isVisible = tool.style.display === 'block';
 
         if (isVisible) {
+            // Disable Mode
             tool.style.display = 'none';
             inputs.forEach(el => el.style.display = 'none');
             badges.forEach(el => el.style.display = 'flex');
+            
+            // Disable Sortable
+            if (sortableInstance) {
+                sortableInstance.destroy();
+                sortableInstance = null;
+            }
+            // Restore cursor
+            cards.forEach(c => c.style.cursor = 'pointer');
+            
         } else {
+            // Enable Mode
             tool.style.display = 'block';
             inputs.forEach(el => el.style.display = 'block');
             badges.forEach(el => el.style.display = 'none');
+            
+            // Change cursor to indicate dragging
+            cards.forEach(c => c.style.cursor = 'move');
+
+            // Initialize Sortable
+            sortableInstance = new Sortable(gridEl, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onEnd: function (evt) {
+                    updateVisualNumbers();
+                }
+            });
+            
+            // Initial number update
+            updateVisualNumbers();
         }
+    }
+
+    function updateVisualNumbers() {
+        const rows = document.querySelectorAll('.card');
+        rows.forEach((row, index) => {
+            const input = row.querySelector('.sort-input');
+            input.value = index + 1;
+        });
+    }
+
+    // --- AUTO SORT LOGIC ---
+    function autoSort(key) {
+        if (!confirm(`This will reorder the visible cards by ${key}. You still need to click Save.`)) return;
+        
+        const cards = Array.from(document.querySelectorAll('.card'));
+        
+        cards.sort((a, b) => {
+            let valA = a.dataset[key].toLowerCase();
+            let valB = b.dataset[key].toLowerCase();
+            if (valA < valB) return -1;
+            if (valA > valB) return 1;
+            return 0;
+        });
+        
+        // Re-append to grid in new order
+        cards.forEach(card => gridEl.appendChild(card));
+        
+        // Update numbers
+        updateVisualNumbers();
+    }
+
+    async function saveOrder() {
+        const cards = document.querySelectorAll('.card');
+        const idList = [];
+        
+        // The DOM order is now the correct order
+        cards.forEach(card => {
+            idList.push(parseInt(card.dataset.id));
+        });
+
+        const res = await fetch(`/api/series/{{ series.id }}/update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ order: idList })
+        });
+        if(res.ok) location.reload();
+    }
+
+
+    // --- SERIES SETTINGS ---
+    function toggleSeriesSettings() {
+        const el = document.getElementById('series-settings');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
     }
 
     async function saveSeriesSettings() {
@@ -170,26 +270,6 @@
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ name: name, thumbnail_url: thumb })
-        });
-        if(res.ok) location.reload();
-    }
-
-    async function saveOrder() {
-        const inputs = document.querySelectorAll('.sort-input');
-        const list = [];
-        inputs.forEach(input => {
-            const card = input.closest('.card');
-            const id = parseInt(card.dataset.id);
-            const val = parseInt(input.value);
-            list.push({id: id, val: val});
-        });
-        list.sort((a, b) => a.val - b.val);
-        const idList = list.map(x => x.id);
-
-        const res = await fetch(`/api/series/{{ series.id }}/update`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ order: idList })
         });
         if(res.ok) location.reload();
     }
@@ -219,11 +299,10 @@
         if(selectedGallery) window.location.href = `/reader/${selectedGallery.id}`;
     }
 
-    // --- EDIT MODAL LOGIC (Duplicated from Library) ---
+    // --- EDIT MODAL LOGIC ---
     async function openEditModal() {
         if(!selectedGallery) return;
         
-        // Populate Categories
         const res = await fetch('/api/categories');
         const cats = await res.json();
         const select = document.getElementById('edit_category');
@@ -235,7 +314,6 @@
             select.appendChild(opt);
         });
 
-        // Fill Form
         const card = document.querySelector(`.card[data-id="${selectedGallery.id}"]`);
         document.getElementById('edit_id').value = selectedGallery.id;
         document.getElementById('edit_title').value = card.dataset.title;
@@ -271,32 +349,5 @@
         });
         location.reload(); 
     }
-
-    // --- AUTOCOMPLETE LOGIC ---
-    async function loadAutocomplete() {
-        try {
-            const res = await fetch('/api/autocomplete');
-            const data = await res.json();
-            
-            const artistList = document.getElementById('list-artists');
-            const seriesList = document.getElementById('list-series');
-            artistList.innerHTML = '';
-            seriesList.innerHTML = '';
-            
-            data.artists.forEach(a => {
-                const opt = document.createElement('option');
-                opt.value = a;
-                artistList.appendChild(opt);
-            });
-            data.series.forEach(s => {
-                const opt = document.createElement('option');
-                opt.value = s;
-                seriesList.appendChild(opt);
-            });
-        } catch(e) { console.log("Autocomplete load error", e); }
-    }
-
-    // Init
-    loadAutocomplete();
 </script>
 {% endblock %}
