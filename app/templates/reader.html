@@ -84,7 +84,12 @@
 >
 
     <header>
-        <a href="/" class="btn">← Back</a>
+        {% if gallery.series_id %}
+            <a href="/series/{{ gallery.series_id }}" class="btn">← Back</a>
+        {% else %}
+            <a href="/" class="btn">← Back</a>
+        {% endif %}
+        
         <div class="header-title">{{ gallery.title }}</div>
         <button class="btn" onclick="toggleSettings()">⚙ Settings</button>
     </header>
@@ -123,11 +128,8 @@
         
         // RESUME LOGIC
         let savedPage = parseInt(data.currentPage) || 0;
-        // Default to page 1
         let startPage = 1; 
 
-        // If we have started reading, AND we haven't finished it yet, resume.
-        // If savedPage == totalPages, we assume you finished it and want to re-read from the start.
         if (savedPage > 0 && savedPage < totalPages) {
             startPage = savedPage;
         }
@@ -139,7 +141,6 @@
         document.getElementById('fit-mode').value = settings.fit;
 
         function applySettings() {
-             // ... (Keep existing applySettings logic) ...
             const fit = document.getElementById('fit-mode').value;
             const img = document.getElementById('page-img');
             
@@ -158,10 +159,12 @@
         }
 
         async function loadPage(num) {
-            // ... (Keep existing loadPage logic) ...
             if (num < 1) return;
+            
+            // If we try to go PAST the last page, return to source
             if (num > totalPages) {
-                window.location.href = "/"; 
+                // Click the back button programmatically to go to correct parent
+                document.querySelector('header .btn').click();
                 return;
             }
 
@@ -209,7 +212,7 @@
         // Init
         applySettings();
         document.getElementById('total-pages').innerText = totalPages; 
-        loadPage(startPage);
+        loadPage(startPage); 
     </script>
 </body>
 </html>
