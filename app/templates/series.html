@@ -160,9 +160,40 @@
 </style>
 
 <script>
-    // --- DRAG AND DROP LOGIC ---
+    // --- VARIABLES ---
     let sortableInstance = null;
+    let initialOrder = []; // Store original DOM order for reverting
     const gridEl = document.getElementById('series-grid');
+
+    // --- SERIES SETTINGS TOGGLE ---
+    function toggleSeriesSettings() {
+        const el = document.getElementById('series-settings');
+        const isClosing = el.style.display === 'block';
+
+        if (isClosing) {
+            // FIX: If closing settings, check if reorder is active and Cancel it
+            const tool = document.getElementById('reorder-tool');
+            if (tool.style.display === 'block') {
+                cancelReorder();
+            }
+        }
+
+        el.style.display = isClosing ? 'none' : 'block';
+    }
+
+    async function saveSeriesSettings() {
+        const name = document.getElementById('inp_name').value;
+        const thumb = document.getElementById('inp_thumb').value;
+
+        const res = await fetch(`/api/series/{{ series.id }}/update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name, thumbnail_url: thumb })
+        });
+        if(res.ok) location.reload();
+    }
+
+    // --- DRAG AND DROP LOGIC ---
 
     function toggleReorderMode() {
         const tool = document.getElementById('reorder-tool');
@@ -173,29 +204,23 @@
         const isVisible = tool.style.display === 'block';
 
         if (isVisible) {
-            // Disable Mode
-            tool.style.display = 'none';
-            inputs.forEach(el => el.style.display = 'none');
-            badges.forEach(el => el.style.display = 'flex');
-            
-            // Disable Sortable
-            if (sortableInstance) {
-                sortableInstance.destroy();
-                sortableInstance = null;
-            }
-            // Restore cursor
-            cards.forEach(c => c.style.cursor = 'pointer');
-            
+            // If clicking the button again while open, treat as Cancel
+            cancelReorder();
         } else {
-            // Enable Mode
+            // ENABLE MODE
+            
+            // 1. Save current order to memory so we can revert later
+            initialOrder = Array.from(gridEl.children);
+
+            // 2. Show UI
             tool.style.display = 'block';
             inputs.forEach(el => el.style.display = 'block');
             badges.forEach(el => el.style.display = 'none');
             
-            // Change cursor to indicate dragging
+            // 3. Change cursor
             cards.forEach(c => c.style.cursor = 'move');
 
-            // Initialize Sortable
+            // 4. Initialize Sortable
             sortableInstance = new Sortable(gridEl, {
                 animation: 150,
                 ghostClass: 'sortable-ghost',
@@ -204,9 +229,32 @@
                 }
             });
             
-            // Initial number update
             updateVisualNumbers();
         }
+    }
+
+    function cancelReorder() {
+        // 1. Revert DOM to initial order
+        if (initialOrder.length > 0) {
+            initialOrder.forEach(card => gridEl.appendChild(card));
+        }
+
+        // 2. Hide UI
+        document.getElementById('reorder-tool').style.display = 'none';
+        document.querySelectorAll('.sort-ui').forEach(el => el.style.display = 'none');
+        document.querySelectorAll('.badges-ui').forEach(el => el.style.display = 'flex');
+
+        // 3. Destroy Sortable
+        if (sortableInstance) {
+            sortableInstance.destroy();
+            sortableInstance = null;
+        }
+
+        // 4. Reset Cursors
+        document.querySelectorAll('.card').forEach(c => c.style.cursor = 'pointer');
+        
+        // 5. Reset Numbers (to match the reverted order)
+        updateVisualNumbers();
     }
 
     function updateVisualNumbers() {
@@ -231,10 +279,7 @@
             return 0;
         });
         
-        // Re-append to grid in new order
         cards.forEach(card => gridEl.appendChild(card));
-        
-        // Update numbers
         updateVisualNumbers();
     }
 
@@ -242,7 +287,6 @@
         const cards = document.querySelectorAll('.card');
         const idList = [];
         
-        // The DOM order is now the correct order
         cards.forEach(card => {
             idList.push(parseInt(card.dataset.id));
         });
@@ -255,26 +299,7 @@
         if(res.ok) location.reload();
     }
 
-
-    // --- SERIES SETTINGS ---
-    function toggleSeriesSettings() {
-        const el = document.getElementById('series-settings');
-        el.style.display = el.style.display === 'none' ? 'block' : 'none';
-    }
-
-    async function saveSeriesSettings() {
-        const name = document.getElementById('inp_name').value;
-        const thumb = document.getElementById('inp_thumb').value;
-
-        const res = await fetch(`/api/series/{{ series.id }}/update`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ name: name, thumbnail_url: thumb })
-        });
-        if(res.ok) location.reload();
-    }
-
-    // --- CONTEXT MENU & EDIT LOGIC ---
+    // --- CONTEXT MENU LOGIC ---
     let selectedGallery = null;
 
     document.addEventListener('contextmenu', event => {
