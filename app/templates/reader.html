@@ -73,6 +73,41 @@
             gap: 20px;
             align-items: center;
         }
+
+        /* JUMP TO PAGE INPUT */
+        #curr-page {
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        #curr-page:hover {
+            background-color: #333;
+            text-decoration: underline;
+        }
+
+        #page-input {
+            width: 50px;
+            background: #333;
+            border: 1px solid #555;
+            color: white;
+            text-align: center;
+            border-radius: 4px;
+            padding: 2px;
+            font-size: 1rem;
+            font-family: inherit;
+        }
+        
+        /* Remove arrows/spinners from number input */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
     </style>
 </head>
 
@@ -100,9 +135,9 @@
         <div id="zone-right" class="click-zone" onclick="goRight()"></div>
     </div>
 
-    <footer>
+<footer>
         <button class="btn" onclick="prevPage()">Prev</button>
-        <span>Page <span id="curr-page">1</span> / <span id="total-pages">?</span></span>
+        <span>Page <span id="curr-page" onclick="enablePageInput()">1</span> / <span id="total-pages">?</span></span>
         <button class="btn" onclick="nextPage()">Next</button>
     </footer>
 
@@ -156,6 +191,63 @@
             }
             settings.fit = fit;
             localStorage.setItem('readerSettings', JSON.stringify(settings));
+        }
+
+        // --- JUMP TO PAGE LOGIC ---
+        function enablePageInput() {
+            const span = document.getElementById('curr-page');
+            
+            // Prevent double-clicking creating nested inputs
+            if (span.querySelector('input')) return;
+
+            // Create Input
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.id = 'page-input';
+            input.value = currentPage;
+            input.min = 1;
+            input.max = totalPages;
+
+            // Handle Enter Key
+            input.onkeydown = function(e) {
+                if (e.key === 'Enter') {
+                    commitPageJump(this.value);
+                } else if (e.key === 'Escape') {
+                    cancelPageInput();
+                }
+                // Stop event bubbling so "ArrowLeft/Right" doesn't change pages while typing
+                e.stopPropagation(); 
+            };
+
+            // Handle Click Away (Blur) -> Cancel
+            input.onblur = function() {
+                // Optional: You could make this commit instead of cancel
+                cancelPageInput();
+            };
+
+            // Swap HTML
+            span.innerHTML = '';
+            span.appendChild(input);
+            
+            // Focus and Select All text
+            input.focus();
+            input.select();
+        }
+
+        function commitPageJump(val) {
+            let num = parseInt(val);
+            if (!isNaN(num) && num >= 1 && num <= totalPages) {
+                loadPage(num); 
+                // Note: loadPage() automatically resets the innerText of 'curr-page', 
+                // removing the input box for us.
+            } else {
+                cancelPageInput();
+            }
+        }
+
+        function cancelPageInput() {
+            // Just revert text to current page
+            document.getElementById('curr-page').innerText = currentPage;
         }
 
         async function loadPage(num) {
