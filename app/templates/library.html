@@ -17,6 +17,7 @@
         {% if item.type == 'series' %}
         <div class="card" 
              data-category="Series" 
+             data-search="{{ item.search_data }}"
              onclick="window.location.href='/series/{{ item.id }}'">
             
             <div style="position: absolute; top: -5px; right: -5px; bottom: 5px; left: 5px; background: #333; z-index: -1; border-radius: 8px; border: 1px solid #555;"></div>
@@ -50,6 +51,7 @@
              data-artist="{{ item.artist }}"
              data-category="{{ item.category }}"
              data-series="{{ item.series }}" 
+             data-search="{{ item.search_data }}"
              data-tags="{{ item.tags|join(', ') }}" 
              data-desc="{{ item.description }}"
              onclick="window.location.href='/reader/{{ item.id }}'">
@@ -135,11 +137,12 @@
             const cards = document.querySelectorAll('.card');
             
             cards.forEach(card => {
-                const title = card.querySelector('.card-title').innerText.toLowerCase();
-                const artist = card.querySelector('.card-artist').innerText.toLowerCase();
+                // NEW: Use the pre-calculated search blob
+                // It contains Title + Artist + (If Series: Child Titles + Child Artists)
+                const searchData = card.dataset.search || "";
                 
                 // Only filter visible cards (respecting category filter)
-                if (title.includes(term) || artist.includes(term)) {
+                if (searchData.includes(term)) {
                     // Check if category filter allows showing this
                     const activeFilter = document.querySelector('.filter-btn.active').innerText;
                     const cardCat = card.dataset.category || "";

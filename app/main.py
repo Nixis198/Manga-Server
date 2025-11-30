@@ -88,6 +88,14 @@ def get_series_cover(series):
     # CASE C: Default
     return f"/thumbnails/{sorted_gals[0].id}.jpg"
 
+def build_search_string(title, artist, extra_list=None):
+    """Creates a lowercase searchable string from metadata"""
+    terms = [title, artist]
+    if extra_list:
+        terms.extend(extra_list)
+    # Filter None values and join
+    return " ".join([str(t).lower() for t in terms if t])
+
 @app.on_event("startup")
 async def startup_event():
     # 1. Create necessary directories
@@ -114,14 +122,10 @@ templates = Jinja2Templates(directory="app/templates")
 
 @app.get("/")
 def read_root(request: Request, db: Session = Depends(get_db)):
-    """
-    Serves the Library HTML page.
-    """
     items = []
     
-    # 1. Get Standalone Galleries
+    # 1. Standalone Galleries
     standalone = db.query(database.Gallery).filter(database.Gallery.series_id == None).all()
-    
     for g in standalone:
         items.append({
             "type": "gallery",
@@ -133,38 +137,42 @@ def read_root(request: Request, db: Session = Depends(get_db)):
             "thumb": f"/thumbnails/{g.id}.jpg",
             "series": "", 
             "tags": [t.name for t in g.tags],
-            "description": g.description if g.description else "" # type: ignore
+            "description": g.description if g.description else "", # type: ignore
+            # NEW: Search Data (Title + Artist)
+            "search_data": build_search_string(g.title, g.artist)
         })
 
-    # 2. Get Series
+    # 2. Series
     all_series = db.query(database.Series).all()
-    
     for s in all_series:
         if not s.galleries:
             continue
             
-        # FIX: Use the helper function to resolve "__reading__" into a real path
         thumb = get_series_cover(s)
-        
-        # Math Section
         total_count = len(s.galleries)
         read_count = sum(1 for g in s.galleries if g.status == "Completed")
-            
+        
+        # NEW: Aggregate Search Data (Series Name + All Chapter Titles + All Artists)
+        child_titles = [g.title for g in s.galleries]
+        child_artists = [g.artist for g in s.galleries]
+        # Combine all into one big searchable blob
+        search_blob = build_search_string(s.name, "Various", child_titles + child_artists)
+
         items.append({
             "type": "series",
             "id": s.id,
             "title": s.name,
             "artist": "Various", 
+            "status": f"{len(s.galleries)} Items", 
             "category": "Series",
-            "thumb": thumb, # Now this is always a valid .jpg path
-            
+            "thumb": thumb,
             "count": total_count,
             "read_count": read_count, 
-            "status": "Series",
-            
             "series": s.name,
             "tags": [],
-            "description": s.description if s.description else "" # type: ignore
+            "description": s.description if s.description else "", # type: ignore
+            # NEW: Search Data
+            "search_data": search_blob
         })
         
     return templates.TemplateResponse("library.html", {
@@ -211,13 +219,13 @@ def get_staged_cover(file_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/library")
 def get_library(db: Session = Depends(get_db)):
-    """
-    Returns Galleries (if standalone) AND Series (as groups).
-    Returns Dictionaries, not SQLAlchemy Objects.
-    """
+    # ... (Logic is identical to read_root above) ...
+    # You can actually refactor this to share code, but for now, just copy-paste the logic above.
+    # COPY THE EXACT LOGIC FROM read_root HERE
+    
     items = []
     
-    # 1. Get Standalone Galleries (series_id is None)
+    # 1. Standalone
     standalone = db.query(database.Gallery).filter(database.Gallery.series_id == None).all()
     for g in standalone:
         items.append({
@@ -230,27 +238,24 @@ def get_library(db: Session = Depends(get_db)):
             "thumb": f"/thumbnails/{g.id}.jpg",
             "series": "", 
             "tags": [t.name for t in g.tags], 
-            "description": g.description if g.description else "" # type: ignore
+            "description": g.description if g.description else "", # type: ignore
+            "search_data": build_search_string(g.title, g.artist) # <--- Added
         })
 
-    # 2. Get Series
+    # 2. Series
     all_series = db.query(database.Series).all()
     for s in all_series:
         if not s.galleries:
             continue
             
-        # Determine Series Thumbnail
-        if s.thumbnail_url: # type: ignore
-            thumb = get_series_cover(s)
-        else:
-            # Use the first gallery's thumb
-            first = sorted(s.galleries, key=lambda x: (x.sort_order, x.id))[0]
-            thumb = f"/thumbnails/{first.id}.jpg"
-        
-        # --- NEW MATH SECTION ---
+        thumb = get_series_cover(s)
         total_count = len(s.galleries)
-        # Count how many galleries in this series are marked 'Completed'
         read_count = sum(1 for g in s.galleries if g.status == "Completed")
+        
+        # NEW: Aggregate Search Data
+        child_titles = [g.title for g in s.galleries]
+        child_artists = [g.artist for g in s.galleries]
+        search_blob = build_search_string(s.name, "Various", child_titles + child_artists)
             
         items.append({
             "type": "series",
@@ -259,15 +264,13 @@ def get_library(db: Session = Depends(get_db)):
             "artist": "Various", 
             "category": "Series",
             "thumb": thumb,
-            
-            # Send the raw numbers to the frontend
             "count": total_count,
             "read_count": read_count, 
-            "status": "Series", # Placeholder
-            
+            "status": "Series", 
             "series": s.name,
             "tags": [],
-            "description": s.description if s.description else "" # type: ignore
+            "description": s.description if s.description else "", # type: ignore
+            "search_data": search_blob # <--- Added
         })
         
     return items
