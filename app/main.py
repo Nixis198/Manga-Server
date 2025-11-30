@@ -174,6 +174,8 @@ def read_root(request: Request, db: Session = Depends(get_db)):
             # NEW: Search Data
             "search_data": search_blob
         })
+
+        items.sort(key=lambda x: x['title'].lower())
         
     return templates.TemplateResponse("library.html", {
         "request": request, 
@@ -272,6 +274,8 @@ def get_library(db: Session = Depends(get_db)):
             "description": s.description if s.description else "", # type: ignore
             "search_data": search_blob # <--- Added
         })
+
+        items.sort(key=lambda x: x['title'].lower())
         
     return items
 
