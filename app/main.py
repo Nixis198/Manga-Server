@@ -12,6 +12,7 @@ import os
 # Import our local modules
 from . import database, schemas
 from .services import scanner, importer, reader
+from .plugins import manager
 
 # --- CONFIGURATION ---
 DATA_DIR = os.getenv("DATA_DIR", "./data")
@@ -770,3 +771,115 @@ def update_series(series_id: int, payload: dict, db: Session = Depends(get_db)):
                 
     db.commit()
     return {"status": "success"}
+
+# --- PLUGIN API ---
+
+@app.get("/api/plugins")
+def get_plugins(db: Session = Depends(get_db)):
+    """
+    Returns list of installed plugins and their required config fields,
+    pre-filled with saved values from DB.
+    """
+    loaded = manager.load_plugins()
+    results = []
+    
+    for p_id, p_class in loaded.items():
+        # Instantiate to access properties
+        plugin = p_class() 
+        
+        # Fetch saved configs for this plugin from DB
+        saved_configs = db.query(database.PluginConfig).filter(database.PluginConfig.plugin_id == p_id).all()
+        config_map = {c.key: c.value for c in saved_configs}
+        
+        # Merge saved values into the field definitions
+        fields = []
+        for field in plugin.config_fields:
+            fields.append({
+                "key": field["key"],
+                "label": field["label"],
+                "value": config_map.get(field["key"], "") # type: ignore
+            })
+            
+        results.append({
+            "id": plugin.id,
+            "name": plugin.name,
+            "fields": fields
+        })
+        
+    return results
+
+@app.post("/api/plugins/config")
+def save_plugin_config(payload: dict, db: Session = Depends(get_db)):
+    """
+    Saves plugin settings (cookies, keys) to the database.
+    Payload: {"plugin_id": "fakku", "config": {"fakku_sid": "123", ...}}
+    """
+    p_id = payload.get("plugin_id")
+    config_data = payload.get("config", {})
+    
+    for key, value in config_data.items():
+        # Check if setting exists
+        setting = db.query(database.PluginConfig).filter(
+            database.PluginConfig.plugin_id == p_id, 
+            database.PluginConfig.key == key
+        ).first()
+        
+        if not setting:
+            # Create new
+            setting = database.PluginConfig(plugin_id=p_id, key=key, value=str(value))
+            db.add(setting)
+        else:
+            # Update existing
+            setting.value = str(value) # type: ignore
+            
+    db.commit()
+    return {"status": "saved"}
+
+@app.post("/api/plugins/upload")
+async def upload_plugin(file: UploadFile = File(...)):
+    """
+    Uploads a .py file to the app/plugins/ directory.
+    """
+    if not file.filename.endswith(".py"): # type: ignore
+        raise HTTPException(status_code=400, detail="Only .py files allowed")
+    
+    # Save to app/plugins/
+    # We assume the server is running from the root, so path is app/plugins/filename
+    file_path = os.path.join("app", "plugins", file.filename) # type: ignore
+    
+    try:
+        with open(file_path, "wb+") as f:
+            shutil.copyfileobj(file.file, f)
+    except Exception as e:
+        logger.error(f"Plugin upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Plugin upload failed: {e}")
+        
+    return {"status": "success", "filename": file.filename}
+
+@app.post("/api/plugins/run")
+def run_plugin(payload: dict, db: Session = Depends(get_db)):
+    """
+    Executes a plugin to scrape metadata.
+    Payload: {"plugin_id": "fakku", "url": "https://..."}
+    """
+    p_id = payload.get("plugin_id")
+    url = payload.get("url")
+    
+    # 1. Load the plugin
+    plugin = manager.get_plugin_instance(p_id) # type: ignore
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+    
+    # 2. Load config from DB
+    saved_configs = db.query(database.PluginConfig).filter(database.PluginConfig.plugin_id == p_id).all()
+    config_map = {c.key: c.value for c in saved_configs}
+    
+    try:
+        # 3. Run the scrape method
+        logger.info(f"Running plugin {p_id} on {url}")
+        result = plugin.scrape(url, config_map) # type: ignore
+        return result
+    except Exception as e:
+        logger.error(f"Plugin Error: {e}")
+        # Send the specific error message back to the frontend
+        raise HTTPException(status_code=500, detail=str(e))

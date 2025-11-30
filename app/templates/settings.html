@@ -40,10 +40,26 @@
                 <button onclick="addCategory()" class="btn-small" style="background:var(--accent);">Add</button>
             </div>
             
-            <div id="category-list" class="list-group" style="max-height: 300px; overflow-y: auto; border: 1px solid #444; border-radius: 4px;">
+            <div id="category-list" class="list-group" style="max-height: 200px; overflow-y: auto; border: 1px solid #444; border-radius: 4px;">
                 <div style="padding:10px; color:#888;">Loading...</div>
             </div>
         </div>
+
+        <div class="settings-panel">
+            <h2>Metadata Plugins</h2>
+            
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #444; padding-bottom: 15px;">
+                <input type="file" id="plugin_upload_input" accept=".py" style="display:none;" onchange="uploadPluginFile(this)">
+                <button onclick="document.getElementById('plugin_upload_input').click()" class="btn-small" style="background: #34495e; width: 100%;">
+                    + Upload Plugin (.py)
+                </button>
+            </div>
+
+            <div id="plugin-config-list">
+                <div style="color:#888;">Loading plugins...</div>
+            </div>
+        </div>
+
         <div class="settings-panel">
             <h2>Database Maintenance</h2>
             <p class="help-text">Export your metadata to a JSON file or restore from a backup.</p>
@@ -59,16 +75,17 @@
                 </button>
             </div>
         </div>
+
     </div>
 
     <div class="logs-panel">
         <div class="panel-header">
             <h3>Server Logs</h3>
-                <div>
-                    <button onclick="fetchLogs()" class="btn-small">Refresh</button>
-                    <button onclick="clearLogs()" class="btn-small" style="background:#c0392b; margin-left:5px;">Clear</button>
-                </div>
+            <div>
+                <button onclick="fetchLogs()" class="btn-small">Refresh</button>
+                <button onclick="clearLogs()" class="btn-small" style="background:#c0392b; margin-left:5px;">Clear</button>
             </div>
+        </div>
         <div class="console-window">
             <pre id="log-output">Loading logs...</pre>
         </div>
@@ -80,7 +97,6 @@
 {% block scripts %}
 <script>
     // --- GLOBAL SETTINGS LOGIC ---
-
     async function loadSettings() {
         const res = await fetch('/api/settings');
         const data = await res.json();
@@ -107,15 +123,11 @@
             body: JSON.stringify(payload)
         });
 
-        if (res.ok) {
-            alert("Settings Saved!");
-        } else {
-            alert("Error saving settings.");
-        }
+        if (res.ok) alert("Settings Saved!");
+        else alert("Error saving settings.");
     }
 
     // --- CATEGORY MANAGER LOGIC ---
-
     async function loadCategories() {
         const res = await fetch('/api/categories');
         const cats = await res.json();
@@ -184,6 +196,96 @@
         }
     }
 
+    // --- PLUGIN MANAGER LOGIC ---
+    async function loadPlugins() {
+        try {
+            const res = await fetch('/api/plugins');
+            const plugins = await res.json();
+            const container = document.getElementById('plugin-config-list');
+            container.innerHTML = '';
+
+            if (plugins.length === 0) {
+                container.innerHTML = '<div style="color:#888;">No plugins installed.</div>';
+                return;
+            }
+
+            plugins.forEach(p => {
+                const div = document.createElement('div');
+                div.style.marginBottom = "20px";
+                div.style.background = "#222";
+                div.style.padding = "15px";
+                div.style.borderRadius = "5px";
+                div.style.border = "1px solid #444";
+
+                let html = `<h4 style="margin:0 0 15px 0; color:var(--accent); border-bottom:1px solid #333; padding-bottom:5px;">${p.name}</h4>`;
+                
+                if (p.fields.length === 0) {
+                    html += `<div style="font-size:0.8rem; color:#888; font-style:italic;">No configuration needed.</div>`;
+                }
+
+                // Generate Input fields for config
+                p.fields.forEach(f => {
+                    html += `
+                        <div style="margin-bottom:10px;">
+                            <label style="display:block; font-size:0.8rem; color:#aaa; margin-bottom:4px;">${f.label}</label>
+                            <input type="text" class="plugin-cfg-input" 
+                                   data-plugin="${p.id}" data-key="${f.key}" 
+                                   value="${f.value}" 
+                                   style="width:100%; padding:8px; background:#111; border:1px solid #444; color:white; border-radius:4px;">
+                        </div>
+                    `;
+                });
+
+                if (p.fields.length > 0) {
+                    html += `<div style="text-align:right;"><button onclick="savePluginConfig('${p.id}')" class="btn-save" style="width:auto; padding:5px 15px; font-size:0.9rem;">Save Config</button></div>`;
+                }
+                
+                div.innerHTML = html;
+                container.appendChild(div);
+            });
+        } catch(e) {
+            console.error("Plugin load error:", e);
+        }
+    }
+
+    async function savePluginConfig(pluginId) {
+        const inputs = document.querySelectorAll(`.plugin-cfg-input[data-plugin="${pluginId}"]`);
+        const config = {};
+        
+        inputs.forEach(inp => {
+            config[inp.dataset.key] = inp.value;
+        });
+
+        const res = await fetch('/api/plugins/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ plugin_id: pluginId, config: config })
+        });
+
+        if (res.ok) alert("Configuration Saved!");
+        else alert("Error saving configuration.");
+    }
+
+    async function uploadPluginFile(input) {
+        if (!input.files[0]) return;
+        const formData = new FormData();
+        formData.append("file", input.files[0]);
+
+        try {
+            const res = await fetch('/api/plugins/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                alert("Plugin uploaded successfully! Click OK to refresh the page.");
+                location.reload();
+            } else {
+                alert("Upload failed.");
+            }
+        } catch(e) { alert("Error uploading: " + e); }
+    }
+
     // --- LOGS LOGIC ---
     async function fetchLogs() {
         const res = await fetch('/api/logs');
@@ -195,24 +297,14 @@
 
     async function clearLogs() {
         if (!confirm("Are you sure you want to clear the server logs?")) return;
-
         const res = await fetch('/api/logs', { method: 'DELETE' });
-        
-        if (res.ok) {
-            // Refresh the view immediately
-            fetchLogs();
-        } else {
-            alert("Failed to clear logs.");
-        }
+        if (res.ok) fetchLogs();
     }
 
-    // --- BACKUP & RESTORE LOGIC ---
-
+    // --- DATABASE MAINTENANCE ---
     async function downloadBackup() {
-        // Trigger the download
         const a = document.createElement("a");
         a.href = "/api/backup";
-        // Name the file with a timestamp
         const date = new Date().toISOString().slice(0, 10);
         a.download = `manga_server_backup_${date}.json`;
         document.body.appendChild(a);
@@ -225,29 +317,24 @@
         if (!file) return;
 
         if (!confirm("WARNING: This will wipe your current database and replace it with the backup. Continue?")) {
-            inputElement.value = ''; // Reset input
+            inputElement.value = ''; 
             return;
         }
 
         const formData = new FormData();
         formData.append("file", file);
 
-        // Show loading state (optional UI enhancement)
-        const btn = inputElement.nextElementSibling; // The button we clicked
+        const btn = inputElement.nextElementSibling;
         const originalText = btn.innerText;
         btn.innerText = "Restoring...";
         btn.disabled = true;
 
         try {
-            const res = await fetch("/api/restore", {
-                method: "POST",
-                body: formData
-            });
-            
+            const res = await fetch("/api/restore", { method: "POST", body: formData });
             const result = await res.json();
             
             if (res.ok) {
-                alert("Restore Successful! The page will now reload.");
+                alert("Restore Successful! Page will reload.");
                 location.reload();
             } else {
                 alert("Error: " + result.detail);
@@ -255,7 +342,6 @@
         } catch (e) {
             alert("Upload failed: " + e);
         } finally {
-            // Reset UI
             btn.innerText = originalText;
             btn.disabled = false;
             inputElement.value = '';
@@ -265,6 +351,7 @@
     // INIT
     loadSettings();
     loadCategories();
+    loadPlugins(); // Load the new plugin section
     fetchLogs();
     setInterval(fetchLogs, 5000);
 </script>

@@ -21,6 +21,18 @@ gallery_tags = Table('gallery_tags', Base.metadata,
 
 # --- Models ---
 
+class PluginConfig(Base):
+    """
+    Stores settings for plugins (e.g., cookies, keys).
+    """
+    __tablename__ = "plugin_configs"
+    
+    # Composite primary key: One value per key per plugin
+    # Example: plugin_id="fakku", key="fakku_sid"
+    plugin_id = Column(String, primary_key=True, index=True)
+    key = Column(String, primary_key=True, index=True) 
+    value = Column(String)
+
 class Category(Base):
     __tablename__ = "categories"
     id = Column(Integer, primary_key=True, index=True)
