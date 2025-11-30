@@ -18,25 +18,32 @@
         <h3>Series Settings</h3>
         
         <div style="display: flex; gap: 30px; flex-wrap: wrap;">
-            <div style="flex: 1; min-width: 250px;">
-                <label style="display:block; color:#aaa; margin-bottom:5px;">Series Name</label>
-                <input type="text" id="inp_name" value="{{ series.name }}" style="width: 100%; padding: 8px;">
+            
+            <div style="width: 200px; text-align: center;">
+                <img id="setting-preview-img" src="{{ cover_url }}" style="width: 100%; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); margin-bottom: 10px;">
             </div>
 
             <div style="flex: 1; min-width: 250px;">
-                <label style="display:block; color:#aaa; margin-bottom:5px;">Series Thumbnail</label>
-                <select id="inp_thumb" style="width: 100%; padding: 8px;">
-                    <option value="">(Default - First Gallery)</option>
-                    {% for g in galleries %}
-                    <option value="/thumbnails/{{g.id}}.jpg" {% if series.thumbnail_url == '/thumbnails/' ~ g.id ~ '.jpg' %}selected{% endif %}>
-                        {{ g.title }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; color:#aaa; margin-bottom:5px;">Series Name</label>
+                    <input type="text" id="inp_name" value="{{ series.name }}" style="width: 100%; padding: 8px;">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; color:#aaa; margin-bottom:5px;">Series Thumbnail</label>
+                    <select id="inp_thumb" style="width: 100%; padding: 8px;" onchange="updatePreview(this)">
+                        
+                        <option value="">(Default - First Gallery)</option>
+                        <option value="__reading__" {% if series.thumbnail_url == '__reading__' %}selected{% endif %}>(Auto - Currently Reading)</option>
+                        {% for g in galleries %}
+                        <option value="/thumbnails/{{g.id}}.jpg" {% if series.thumbnail_url == '/thumbnails/' ~ g.id ~ '.jpg' %}selected{% endif %}>{{ g.title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
         </div>
 
-        <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #444; padding-top: 15px;">
             <button class="btn-small" onclick="toggleReorderMode()" style="background: #e67e22;">Manage Sort Order</button>
             <button class="btn-save" onclick="saveSeriesSettings()" style="width: auto;">Save Settings</button>
         </div>
@@ -69,6 +76,7 @@
              data-filename="{{ gallery.filename }}"
              data-artist="{{ gallery.artist }}"
              data-series="{{ series.name }}"
+             data-status="{{ gallery.status }}"
              data-category="{{ gallery.category.name if gallery.category else '' }}"
              data-tags="{{ gallery.tags|map(attribute='name')|join(', ') }}" 
              data-desc="{{ gallery.description }}"
@@ -162,8 +170,42 @@
 <script>
     // --- VARIABLES ---
     let sortableInstance = null;
-    let initialOrder = []; // Store original DOM order for reverting
+    let initialOrder = [];
     const gridEl = document.getElementById('series-grid');
+
+    // --- 1. DATA FOR PREVIEW LOGIC ---
+    // IDE FIX: Instead of injecting Python code here, we read the data 
+    // directly from the HTML cards we just rendered.
+    const seriesData = Array.from(document.querySelectorAll('.card')).map(card => {
+        return {
+            id: parseInt(card.dataset.id),
+            status: card.dataset.status, // We added this data attribute in Step 1
+            thumb: `/thumbnails/${card.dataset.id}.jpg`
+        };
+    });
+
+    function updatePreview(selectElement) {
+        const val = selectElement.value;
+        const img = document.getElementById('setting-preview-img');
+        let newSrc = "";
+
+        if (val === "__reading__") {
+            // Find the first gallery that is 'Reading'
+            const readingGal = seriesData.find(g => g.status === "Reading");
+            // If found, use it. If not, fallback to the first gallery (Default)
+            newSrc = readingGal ? readingGal.thumb : seriesData[0].thumb;
+        } 
+        else if (val === "") {
+            // Default: Always the first gallery in the sorted list
+            if (seriesData.length > 0) newSrc = seriesData[0].thumb;
+        } 
+        else {
+            // Specific gallery selected
+            newSrc = val;
+        }
+
+        if (newSrc) img.src = newSrc;
+    }
 
     // --- SERIES SETTINGS TOGGLE ---
     function toggleSeriesSettings() {
@@ -171,13 +213,11 @@
         const isClosing = el.style.display === 'block';
 
         if (isClosing) {
-            // FIX: If closing settings, check if reorder is active and Cancel it
             const tool = document.getElementById('reorder-tool');
             if (tool.style.display === 'block') {
                 cancelReorder();
             }
         }
-
         el.style.display = isClosing ? 'none' : 'block';
     }
 
@@ -194,7 +234,6 @@
     }
 
     // --- DRAG AND DROP LOGIC ---
-
     function toggleReorderMode() {
         const tool = document.getElementById('reorder-tool');
         const inputs = document.querySelectorAll('.sort-ui');
@@ -204,56 +243,36 @@
         const isVisible = tool.style.display === 'block';
 
         if (isVisible) {
-            // If clicking the button again while open, treat as Cancel
             cancelReorder();
         } else {
-            // ENABLE MODE
-            
-            // 1. Save current order to memory so we can revert later
             initialOrder = Array.from(gridEl.children);
-
-            // 2. Show UI
             tool.style.display = 'block';
             inputs.forEach(el => el.style.display = 'block');
             badges.forEach(el => el.style.display = 'none');
-            
-            // 3. Change cursor
             cards.forEach(c => c.style.cursor = 'move');
 
-            // 4. Initialize Sortable
             sortableInstance = new Sortable(gridEl, {
                 animation: 150,
                 ghostClass: 'sortable-ghost',
-                onEnd: function (evt) {
-                    updateVisualNumbers();
-                }
+                onEnd: function (evt) { updateVisualNumbers(); }
             });
-            
             updateVisualNumbers();
         }
     }
 
     function cancelReorder() {
-        // 1. Revert DOM to initial order
         if (initialOrder.length > 0) {
             initialOrder.forEach(card => gridEl.appendChild(card));
         }
-
-        // 2. Hide UI
         document.getElementById('reorder-tool').style.display = 'none';
         document.querySelectorAll('.sort-ui').forEach(el => el.style.display = 'none');
         document.querySelectorAll('.badges-ui').forEach(el => el.style.display = 'flex');
 
-        // 3. Destroy Sortable
         if (sortableInstance) {
             sortableInstance.destroy();
             sortableInstance = null;
         }
-
-        // 4. Reset Cursors
         document.querySelectorAll('.card').forEach(c => c.style.cursor = 'pointer');
-        
-        // 5. Reset Numbers (to match the reverted order)
         updateVisualNumbers();
     }
 
@@ -265,12 +284,9 @@
         });
     }
 
-    // --- AUTO SORT LOGIC ---
     function autoSort(key) {
         if (!confirm(`This will reorder the visible cards by ${key}. You still need to click Save.`)) return;
-        
         const cards = Array.from(document.querySelectorAll('.card'));
-        
         cards.sort((a, b) => {
             let valA = a.dataset[key].toLowerCase();
             let valB = b.dataset[key].toLowerCase();
@@ -278,7 +294,6 @@
             if (valA > valB) return 1;
             return 0;
         });
-        
         cards.forEach(card => gridEl.appendChild(card));
         updateVisualNumbers();
     }
@@ -286,7 +301,6 @@
     async function saveOrder() {
         const cards = document.querySelectorAll('.card');
         const idList = [];
-        
         cards.forEach(card => {
             idList.push(parseInt(card.dataset.id));
         });
@@ -301,7 +315,6 @@
 
     // --- CONTEXT MENU LOGIC ---
     let selectedGallery = null;
-
     document.addEventListener('contextmenu', event => {
         const card = event.target.closest('.card');
         if (card) {

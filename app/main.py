@@ -63,6 +63,31 @@ def get_db():
     finally:
         db.close()
 
+def get_series_cover(series):
+    if not series.galleries:
+        return ""
+    
+    # Sort galleries
+    sorted_gals = sorted(series.galleries, key=lambda x: (x.sort_order, x.id))
+    
+    # CASE A: User selected "Currently Reading"
+    if series.thumbnail_url == "__reading__":
+        # Find first 'Reading'. If none, check for 'New' or just take the first one.
+        # Actually, let's prioritize 'Reading' -> 'New' -> 'Completed' (wrap around)
+        reading_gal = next((g for g in sorted_gals if g.status == "Reading"), None)
+        if reading_gal:
+            return f"/thumbnails/{reading_gal.id}.jpg"
+        
+        # Fallback: Just return the first one
+        return f"/thumbnails/{sorted_gals[0].id}.jpg"
+
+    # CASE B: Specific static URL
+    if series.thumbnail_url:
+        return series.thumbnail_url
+        
+    # CASE C: Default
+    return f"/thumbnails/{sorted_gals[0].id}.jpg"
+
 @app.on_event("startup")
 async def startup_event():
     # 1. Create necessary directories
@@ -118,14 +143,10 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         if not s.galleries:
             continue
             
-        # Determine Series Thumbnail
-        if s.thumbnail_url: # type: ignore
-            thumb = s.thumbnail_url
-        else:
-            first = sorted(s.galleries, key=lambda x: (x.sort_order, x.id))[0]
-            thumb = f"/thumbnails/{first.id}.jpg"
+        # FIX: Use the helper function to resolve "__reading__" into a real path
+        thumb = get_series_cover(s)
         
-        # --- NEW MATH SECTION (Was missing here) ---
+        # Math Section
         total_count = len(s.galleries)
         read_count = sum(1 for g in s.galleries if g.status == "Completed")
             
@@ -135,12 +156,11 @@ def read_root(request: Request, db: Session = Depends(get_db)):
             "title": s.name,
             "artist": "Various", 
             "category": "Series",
-            "thumb": thumb,
+            "thumb": thumb, # Now this is always a valid .jpg path
             
-            # These are the fields the HTML needs:
             "count": total_count,
             "read_count": read_count, 
-            "status": "Series", 
+            "status": "Series",
             
             "series": s.name,
             "tags": [],
@@ -221,7 +241,7 @@ def get_library(db: Session = Depends(get_db)):
             
         # Determine Series Thumbnail
         if s.thumbnail_url: # type: ignore
-            thumb = s.thumbnail_url
+            thumb = get_series_cover(s)
         else:
             # Use the first gallery's thumb
             first = sorted(s.galleries, key=lambda x: (x.sort_order, x.id))[0]
@@ -712,10 +732,14 @@ def view_series_page(series_id: int, request: Request, db: Session = Depends(get
     # Sort galleries by our new sort_order column
     galleries = sorted(series.galleries, key=lambda x: (x.sort_order, x.id))
     
+    # Calculate the cover for display
+    cover_url = get_series_cover(series)
+    
     return templates.TemplateResponse("series.html", {
         "request": request, 
         "series": series, 
-        "galleries": galleries
+        "galleries": galleries,
+        "cover_url": cover_url
     })
 
 @app.post("/api/series/{series_id}/update")
