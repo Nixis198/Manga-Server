@@ -75,15 +75,12 @@
 
                     <div style="background: #252525; padding: 15px; border-radius: 6px; border: 1px solid #444; margin-bottom: 20px; margin-top: 20px;">
                         <h3 style="margin-top:0; font-size: 1rem; color: var(--accent);">Auto-Fill Metadata</h3>
-                        <div class="form-group-row">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Source / Plugin</label>
-                                <select id="plugin_source">
-                                    <option value="" disabled selected>Select a plugin...</option>
-                                    <option value="fakku">Fakku (Coming Soon)</option>
-                                    <option value="mangaupdates">MangaUpdates (Coming Soon)</option>
-                                </select>
-                            </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>Source / Plugin</label>
+                            <select id="plugin_source">
+                                <option value="" disabled selected>Select a plugin...</option>
+                            </select>
+                        </div>
                             <div class="form-group" style="flex: 2;">
                                 <label>URL / ID</label>
                                 <div style="display: flex; gap: 10px;">
@@ -214,24 +211,69 @@
         if(activeItem) activeItem.classList.add('active');
     }
 
-    // NEW: Plugin Logic
     async function runPlugin() {
-        const source = document.getElementById('plugin_source').value;
-        const url = document.getElementById('plugin_url').value;
+        const sourceSelect = document.getElementById('plugin_source');
+        const urlInput = document.getElementById('plugin_url');
+        const btn = event.target; // The fetch button
+        const originalText = "Fetch"; // Save original text
+
+        const source = sourceSelect.value;
+        const url = urlInput.value;
 
         if (!source || !url) {
             alert("Please select a source and enter a URL.");
             return;
         }
 
-        // Placeholder for future API call
-        // e.g., const res = await fetch('/api/plugins/run', ... );
-        
-        alert(`Plugin system not implemented yet.\nSource: ${source}\nURL: ${url}`);
-        
-        // Example of how it will work later:
-        // document.getElementById('inp_title').value = data.title;
-        // document.getElementById('inp_artist').value = data.artist;
+        // 1. UI Loading State
+        btn.innerText = "Fetching...";
+        btn.disabled = true;
+        btn.style.backgroundColor = "#555";
+
+        try {
+            const res = await fetch('/api/plugins/run', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ plugin_id: source, url: url })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                
+                // 2. Populate Fields (Only if data exists)
+                if(data.title) document.getElementById('inp_title').value = data.title;
+                if(data.artist) document.getElementById('inp_artist').value = data.artist;
+                if(data.description) document.getElementById('inp_desc').value = data.description;
+                
+                // Handle Tags (Array -> Comma String)
+                if(data.tags && Array.isArray(data.tags)) {
+                    document.getElementById('inp_tags').value = data.tags.join(', ');
+                }
+                
+                // 3. Success Visuals
+                btn.style.backgroundColor = "#2ecc71"; // Green
+                btn.innerText = "Found!";
+                
+                // Reset button after 2 seconds
+                setTimeout(() => { 
+                    btn.innerText = originalText; 
+                    btn.style.backgroundColor = "var(--accent)"; // Restore original color (from CSS)
+                    btn.disabled = false;
+                }, 2000);
+
+            } else {
+                const err = await res.json();
+                alert("Plugin Error: " + err.detail);
+                btn.innerText = originalText;
+                btn.disabled = false;
+                btn.style.backgroundColor = "var(--accent)";
+            }
+        } catch (e) {
+            alert("System Error: " + e);
+            btn.innerText = originalText;
+            btn.disabled = false;
+            btn.style.backgroundColor = "var(--accent)";
+        }
     }
 
     // 5. Submit Import
@@ -293,7 +335,68 @@
         });
     }
 
+    async function loadPluginDropdown() {
+        try {
+            // Fetch installed plugins from the backend
+            const res = await fetch('/api/plugins');
+            const plugins = await res.json();
+            
+            const select = document.getElementById('plugin_source');
+            
+            // Reset the list (keep the default placeholder)
+            select.innerHTML = '<option value="" disabled selected>Select a plugin...</option>';
+            
+            if (plugins.length === 0) {
+                const opt = document.createElement('option');
+                opt.disabled = true;
+                opt.innerText = "(No plugins installed)";
+                select.appendChild(opt);
+                return;
+            }
+
+            // Add each plugin as an option
+            plugins.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id; // This ID is sent to /api/plugins/run
+                opt.innerText = p.name;
+                select.appendChild(opt);
+            });
+            
+        } catch (e) {
+            console.error("Error loading plugins:", e);
+        }
+    }
+
+    // --- KEYBOARD SHORTCUTS ---
+    function setupKeyboardShortcuts() {
+        // 1. URL Box: Enter -> Fetch (Prevent Save)
+        const urlInput = document.getElementById('plugin_url');
+        if (urlInput) {
+            urlInput.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault(); // Stop form submission
+                    runPlugin(); // Trigger Fetch
+                }
+            });
+        }
+
+        // 2. Description Box: Enter -> Save (Prevent Newline)
+        const descInput = document.getElementById('inp_desc');
+        if (descInput) {
+            descInput.addEventListener('keydown', function(event) {
+                // Allow Shift+Enter to still make a new line if needed
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault(); // Stop new line
+                    // Trigger the form submit manually
+                    document.getElementById('import-form').requestSubmit();
+                }
+            });
+        }
+    }
+
     // Init
     loadFiles();
+    loadPluginDropdown()
+    setupKeyboardShortcuts()
 </script>
 {% endblock %}
