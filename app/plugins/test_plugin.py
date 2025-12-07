@@ -4,6 +4,7 @@ from .base import MetadataPlugin
 class TestPlugin(MetadataPlugin):
     id = "test_plugin"
     name = "Debug / Test Plugin"
+    version = 1.0
     
     # NEW: Define fields so the Settings UI generates input boxes
     config_fields = [

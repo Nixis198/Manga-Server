@@ -360,6 +360,8 @@
         if (!input.files[0]) return;
         const formData = new FormData();
         formData.append("file", input.files[0]);
+        
+        // Add force flag
         let url = '/api/plugins/upload';
         if (force) url += '?force=true';
 
@@ -371,8 +373,12 @@
                 alert(`Plugin uploaded successfully (v${data.version})! Click OK to refresh.`);
                 location.reload();
             } else if (data.status === 'confirm') {
-                if (confirm(data.message)) uploadPluginFile(input, true);
-                else input.value = '';
+                // ASK USER TO CONFIRM DOWNGRADE
+                if (confirm(data.message)) {
+                    uploadPluginFile(input, true); // Retry with force=true
+                } else {
+                    input.value = ''; // Cancel
+                }
             } else {
                 alert("Upload failed: " + (data.detail || "Unknown error"));
             }

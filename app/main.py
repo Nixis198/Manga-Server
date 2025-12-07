@@ -409,7 +409,7 @@ def get_plugins(db: Session = Depends(get_db)):
         results.append({
             "id": plugin.id, 
             "name": plugin.name, 
-            "version": getattr(plugin, 'version', 1.0), 
+            "version": getattr(plugin, 'version', 1.0),
             "fields": fields
         })
     return results
@@ -429,37 +429,64 @@ def save_plugin_config(payload: dict, db: Session = Depends(get_db)):
 
 @app.post("/api/plugins/upload")
 async def upload_plugin(file: UploadFile = File(...), force: bool = False):
+    """
+    Uploads a plugin safely.
+    1. Uses manager.PLUGIN_DIR to find the exact folder (Fixes [Errno 2]).
+    2. Checks version numbers to prevent accidental downgrades.
+    """
     clean_name = os.path.basename(file.filename) # type: ignore
-    if not clean_name.endswith(".py"): raise HTTPException(400, "Only .py allowed")
+    if not clean_name.endswith(".py"): 
+        raise HTTPException(400, "Only .py files allowed")
     
+    # 1. FIX: Use the absolute path from the manager
     plugin_dir = manager.PLUGIN_DIR
-    if not os.path.exists(plugin_dir): os.makedirs(plugin_dir, exist_ok=True)
+    
+    # 2. FIX: Force create the directory if it's missing
+    if not os.path.exists(plugin_dir): 
+        os.makedirs(plugin_dir, exist_ok=True)
     
     temp_path = os.path.join(plugin_dir, f"temp_{clean_name}")
     target_path = os.path.join(plugin_dir, clean_name)
     
     try:
-        with open(temp_path, "wb+") as f: shutil.copyfileobj(file.file, f)
-        info = manager.get_plugin_info_from_file(temp_path) # type: ignore
+        # Save to temp file
+        with open(temp_path, "wb+") as f: 
+            shutil.copyfileobj(file.file, f)
+            
+        # Inspect the new file
+        info = manager.get_plugin_info_from_file(temp_path)
         if not info:
             if os.path.exists(temp_path): os.remove(temp_path)
-            raise HTTPException(400, "Invalid plugin")
+            raise HTTPException(400, "Invalid plugin file")
             
         new_id, new_ver = info
-        existing = manager.get_plugin_instance(new_id)
+        
+        # Check against existing installed plugin
+        existing = manager.get_plugin_instance(new_id) # type: ignore
         if existing:
             old_ver = getattr(existing, 'version', 0.0)
-            if new_ver <= old_ver and not force:
+            # If new version is older/same and NOT forced -> Ask for confirmation
+            if new_ver <= old_ver and not force: # type: ignore
                 if os.path.exists(temp_path): os.remove(temp_path)
-                return {"status": "confirm", "message": f"Version {old_ver} exists. Replace with {new_ver}?"}
+                return {
+                    "status": "confirm", 
+                    "message": f"Version {old_ver} is already installed. Replace with version {new_ver}?"
+                }
         
+        # Move temp file to final destination
         if os.path.exists(target_path): os.remove(target_path)
         shutil.move(temp_path, target_path)
+        
+        # Reload plugins immediately
         manager.load_plugins()
+        
         return {"status": "success", "id": new_id, "version": new_ver}
+        
     except Exception as e:
         if os.path.exists(temp_path): os.remove(temp_path)
-        raise HTTPException(500, str(e))
+        # Log the exact path that failed to help debugging
+        logger.error(f"Plugin upload failed at {temp_path}: {e}")
+        raise HTTPException(500, detail=str(e))
 
 @app.post("/api/plugins/run")
 def run_plugin(payload: dict, db: Session = Depends(get_db)):

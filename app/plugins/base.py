@@ -5,11 +5,14 @@ class MetadataPlugin:
     The Template that all plugins must inherit from.
     This enforces the standard data format we agreed upon.
     """
-    # Unique ID for the system (e.g., 'fakku', 'mangaupdates')
+    # Unique ID for the system
     id: str = "base"
     
-    # Human-readable name for the UI (e.g., 'Fakku Scraper')
+    # Human-readable name for the UI
     name: str = "Base Plugin"
+
+    # Version number
+    version: float = 1.0
     
     # Define what settings this plugin needs from the user in the Settings page.
     # Format: [{"key": "cookie", "label": "Session Cookie"}, {"key": "user", "label": "Username"}]
