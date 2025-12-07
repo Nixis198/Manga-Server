@@ -83,6 +83,7 @@
     <div id="context-menu" style="display:none; position:fixed; z-index:1000; background:#333; border:1px solid #555; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
         <div class="ctx-item" onclick="openReaderFromCtx()">Read</div>
         <div class="ctx-item" onclick="openEditModal()">Edit Metadata</div>
+        <div class="ctx-item" onclick="downloadGalleryFromCtx()">Download</div>
     </div>
 
     <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
@@ -295,6 +296,13 @@
             });
             
             location.reload(); 
+        }
+
+        function downloadGalleryFromCtx() {
+            if(selectedGallery) {
+                // Trigger the download by navigating to the URL
+                window.location.href = `/api/download/${selectedGallery.id}`;
+            }
         }
 
         // Init

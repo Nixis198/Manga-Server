@@ -6,6 +6,7 @@ from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, Response, Request, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import os
 
@@ -883,3 +884,23 @@ def run_plugin(payload: dict, db: Session = Depends(get_db)):
         logger.error(f"Plugin Error: {e}")
         # Send the specific error message back to the frontend
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/download/{gallery_id}")
+def download_gallery(gallery_id: int, db: Session = Depends(get_db)):
+    """
+    Downloads the raw ZIP/CBZ file for a gallery.
+    """
+    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+        
+    # Verify the file actually exists on disk
+    if not os.path.exists(gallery.path): # type: ignore
+        raise HTTPException(status_code=404, detail="File not found on server disk")
+        
+    # Return the file as an attachment (forces download prompt)
+    return FileResponse(
+        path=gallery.path,  # type: ignore
+        filename=os.path.basename(gallery.path), # type: ignore
+        media_type='application/octet-stream'
+    )
