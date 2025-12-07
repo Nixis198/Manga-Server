@@ -6,12 +6,17 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 
 <div style="padding: 20px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <div>
-            <a href="/" style="color: #888; text-decoration: none;">&larr; Back to Library</a>
-            <h1 style="margin-top: 5px;">{{ series.name }}</h1>
+    <div style="margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <a href="/" style="color: #888; text-decoration: none;">&larr; Back to Library</a>
+                <h1 style="margin: 5px 0;">{{ series.name }}</h1>
+                {% if series.description %}
+                <p style="color: #aaa; margin: 10px 0 0 0; max-width: 800px; line-height: 1.4;">{{ series.description }}</p>
+                {% endif %}
+            </div>
+            <button class="btn-small" onclick="toggleSeriesSettings()">Series Settings</button>
         </div>
-        <button class="btn-small" onclick="toggleSeriesSettings()">Series Settings</button>
     </div>
 
     <div id="series-settings" style="display: none; background: #2d2d2d; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444;">
@@ -34,11 +39,22 @@
                     <select id="inp_thumb" style="width: 100%; padding: 8px;" onchange="updatePreview(this)">
                         
                         <option value="">(Default - First Gallery)</option>
-                        <option value="__reading__" {% if series.thumbnail_url == '__reading__' %}selected{% endif %}>(Auto - Currently Reading)</option>
+                        
+                        <option value="__reading__" {% if series.thumbnail_url == '__reading__' %}selected{% endif %}>
+                            (Auto - Currently Reading)
+                        </option>
+                        
                         {% for g in galleries %}
-                        <option value="/thumbnails/{{g.id}}.jpg" {% if series.thumbnail_url == '/thumbnails/' ~ g.id ~ '.jpg' %}selected{% endif %}>{{ g.title }}</option>
+                        <option value="/thumbnails/{{g.id}}.jpg" {% if series.thumbnail_url == '/thumbnails/' ~ g.id ~ '.jpg' %}selected{% endif %}>
+                            {{ g.title }}
+                        </option>
                         {% endfor %}
                     </select>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display:block; color:#aaa; margin-bottom:5px;">Description</label>
+                    <textarea id="inp_desc" rows="3" style="width: 100%; padding: 8px; background:#1a1a1a; border:1px solid #444; color:white;">{{ series.description }}</textarea>
                 </div>
             </div>
         </div>
@@ -96,7 +112,13 @@
                     </div>
 
                     <div class="badges-ui" style="display: flex; gap: 4px;">
-                        <span class="badge status-{{ gallery.status|lower }}" style="float:none;">{{ gallery.status }}</span>
+                        {% if gallery.status == 'Completed' %}
+                             <span class="badge status-completed" style="float:none;">Completed</span>
+                        {% elif gallery.pages_read > 1 %}
+                            <span class="badge status-reading" style="float:none;">{{ gallery.pages_read }} / {{ gallery.pages_total }}</span>
+                        {% else %}
+                            <span class="badge status-new" style="float:none;">New</span>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -171,16 +193,15 @@
 <script>
     // --- VARIABLES ---
     let sortableInstance = null;
-    let initialOrder = [];
+    let initialOrder = []; // Store original DOM order for reverting
     const gridEl = document.getElementById('series-grid');
 
     // --- 1. DATA FOR PREVIEW LOGIC ---
-    // IDE FIX: Instead of injecting Python code here, we read the data 
-    // directly from the HTML cards we just rendered.
+    // IDE FIX: Read data directly from the HTML cards
     const seriesData = Array.from(document.querySelectorAll('.card')).map(card => {
         return {
             id: parseInt(card.dataset.id),
-            status: card.dataset.status, // We added this data attribute in Step 1
+            status: card.dataset.status, 
             thumb: `/thumbnails/${card.dataset.id}.jpg`
         };
     });
@@ -191,17 +212,13 @@
         let newSrc = "";
 
         if (val === "__reading__") {
-            // Find the first gallery that is 'Reading'
             const readingGal = seriesData.find(g => g.status === "Reading");
-            // If found, use it. If not, fallback to the first gallery (Default)
             newSrc = readingGal ? readingGal.thumb : seriesData[0].thumb;
         } 
         else if (val === "") {
-            // Default: Always the first gallery in the sorted list
             if (seriesData.length > 0) newSrc = seriesData[0].thumb;
         } 
         else {
-            // Specific gallery selected
             newSrc = val;
         }
 
@@ -225,11 +242,12 @@
     async function saveSeriesSettings() {
         const name = document.getElementById('inp_name').value;
         const thumb = document.getElementById('inp_thumb').value;
+        const desc = document.getElementById('inp_desc').value;
 
         const res = await fetch(`/api/series/{{ series.id }}/update`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ name: name, thumbnail_url: thumb })
+            body: JSON.stringify({ name: name, thumbnail_url: thumb, description: desc })
         });
         if(res.ok) location.reload();
     }
@@ -316,6 +334,7 @@
 
     // --- CONTEXT MENU LOGIC ---
     let selectedGallery = null;
+
     document.addEventListener('contextmenu', event => {
         const card = event.target.closest('.card');
         if (card) {
@@ -336,6 +355,12 @@
 
     function openReaderFromCtx() {
         if(selectedGallery) window.location.href = `/reader/${selectedGallery.id}`;
+    }
+
+    function downloadGalleryFromCtx() {
+        if(selectedGallery) {
+            window.location.href = `/api/download/${selectedGallery.id}`;
+        }
     }
 
     // --- EDIT MODAL LOGIC ---
@@ -387,12 +412,6 @@
             body: JSON.stringify(payload)
         });
         location.reload(); 
-    }
-
-    function downloadGalleryFromCtx() {
-        if(selectedGallery) {
-            window.location.href = `/api/download/${selectedGallery.id}`;
-        }
     }
 </script>
 {% endblock %}

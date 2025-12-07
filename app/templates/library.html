@@ -9,14 +9,19 @@
 
     <div id="filter-bar" class="filter-bar">
         <button class="filter-btn active" onclick="filterByCategory('all', this)">All</button>
-        </div>
+    </div>
 
-<div class="grid" id="gallery-grid">
+    <div class="grid" id="gallery-grid">
         {% for item in galleries %}
         
         {% if item.type == 'series' %}
-        <div class="card" 
-             data-category="Series" 
+        <div class="card series-card" 
+             data-id="{{ item.id }}"
+             data-title="{{ item.title }}"
+             data-artist="{{ item.artist }}"
+             data-category="{{ item.category }}"
+             data-tags="{{ item.tags|join(', ') }}" 
+             data-desc="{{ item.description }}"
              data-search="{{ item.search_data }}"
              onclick="window.location.href='/series/{{ item.id }}'">
             
@@ -32,9 +37,9 @@
                     <div style="display: flex; gap: 4px;">
                         <span class="badge" style="background: #555; float:none;">{{ item.count }} Items</span>
 
-                        {% if item.read_count == item.count %}
+                        {% if item.read_count == item.count and item.count > 0 %}
                             <span class="badge status-completed" style="float:none;">Completed</span>
-                        {% elif item.read_count == 0 %}
+                        {% elif item.is_new %}
                             <span class="badge status-new" style="float:none;">New</span>
                         {% else %}
                             <span class="badge status-reading" style="float:none;">{{ item.read_count }} / {{ item.count }}</span>
@@ -45,7 +50,7 @@
         </div>
 
         {% else %}
-        <div class="card" 
+        <div class="card gallery-card" 
              data-id="{{ item.id }}"
              data-title="{{ item.title }}"
              data-artist="{{ item.artist }}"
@@ -65,9 +70,14 @@
                         {{ item.artist }}
                     </div>
                     <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                        {% if item.status %}
-                        <span class="badge status-{{ item.status|lower }}" style="float:none;">{{ item.status }}</span>
+                        {% if item.status == 'Completed' %}
+                            <span class="badge status-completed" style="float:none;">Completed</span>
+                        {% elif item.pages_read|default(0) > 1 %}
+                            <span class="badge status-reading" style="float:none;">{{ item.pages_read }} / {{ item.pages_total }}</span>
+                        {% else %}
+                            <span class="badge status-new" style="float:none;">New</span>
                         {% endif %}
+                        
                         {% if item.category %}
                         <span class="badge" style="float:none; background:#555;">{{ item.category }}</span>
                         {% endif %}
@@ -81,18 +91,17 @@
     </div>
 
     <div id="context-menu" style="display:none; position:fixed; z-index:1000; background:#333; border:1px solid #555; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
-        <div class="ctx-item" onclick="openReaderFromCtx()">Read</div>
-        <div class="ctx-item" onclick="openEditModal()">Edit Metadata</div>
-        <div class="ctx-item" onclick="downloadGalleryFromCtx()">Download</div>
+        <div class="ctx-item" id="ctx-read">Read</div>
+        <div class="ctx-item" id="ctx-edit" onclick="openEditModal()">Edit Metadata</div>
+        <div class="ctx-item" id="ctx-download">Download</div>
     </div>
 
     <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
         <div style="background:#2d2d2d; padding:20px; border-radius:8px; width:500px; max-width:90%;">
-            <h2>Edit Metadata</h2>
+            <h2 id="modal-title">Edit Metadata</h2>
             <input type="hidden" id="edit_id">
-            
-            <div style="margin-bottom:10px;">
-                <label style="display:block; color:#aaa; font-size:0.8rem;">Title</label>
+            <input type="hidden" id="edit_type"> <div style="margin-bottom:10px;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Title / Name</label>
                 <input type="text" id="edit_title" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
             </div>
             
@@ -108,9 +117,9 @@
                         <option value="">(None)</option>
                     </select>
                 </div>
-                <div style="flex:1;">
+                <div style="flex:1;" id="div-edit-series">
                     <label style="display:block; color:#aaa; font-size:0.8rem;">Series</label>
-                    <input type="text" id="edit_series" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                    <input type="text" id="edit_series_name" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
                 </div>
             </div>
 
@@ -138,13 +147,9 @@
             const cards = document.querySelectorAll('.card');
             
             cards.forEach(card => {
-                // NEW: Use the pre-calculated search blob
-                // It contains Title + Artist + (If Series: Child Titles + Child Artists)
                 const searchData = card.dataset.search || "";
                 
-                // Only filter visible cards (respecting category filter)
                 if (searchData.includes(term)) {
-                    // Check if category filter allows showing this
                     const activeFilter = document.querySelector('.filter-btn.active').innerText;
                     const cardCat = card.dataset.category || "";
                     
@@ -163,7 +168,6 @@
         async function loadCategoryFilters() {
             const container = document.getElementById('filter-bar');
             
-            // Fetch Data
             const [catRes, setRes] = await Promise.all([
                 fetch('/api/categories'),
                 fetch('/api/settings')
@@ -173,13 +177,11 @@
             const settings = await setRes.json();
             const showUncategorized = (settings.show_uncategorized === "true");
 
-            // Check if uncategorized items exist
             let hasUncategorized = false;
             document.querySelectorAll('.card').forEach(card => {
-                if (!card.dataset.category) hasUncategorized = true;
+                if (!card.dataset.category && !card.classList.contains('series-card')) hasUncategorized = true;
             });
 
-            // Create Buttons
             cats.forEach(cat => {
                 const btn = document.createElement('button');
                 btn.className = 'filter-btn';
@@ -210,7 +212,7 @@
                 if (categoryName === 'all') {
                     card.style.display = 'block';
                 } else if (categoryName === '__none__') {
-                    card.style.display = (cardCat === "") ? 'block' : 'none';
+                    card.style.display = (cardCat === "" && !card.classList.contains('series-card')) ? 'block' : 'none';
                 } else {
                     card.style.display = (cardCat === categoryName) ? 'block' : 'none';
                 }
@@ -218,16 +220,35 @@
         }
 
         // --- 3. CONTEXT MENU & EDIT LOGIC ---
-        let selectedGallery = null;
+        let selectedItem = null; // {id, type, dataset}
 
         document.addEventListener('contextmenu', event => {
             const card = event.target.closest('.card');
             if (card) {
-                // FIX: If it's a Series card, do not show the menu
-                if (card.dataset.category === 'Series') return;
-
                 event.preventDefault();
-                selectedGallery = { id: card.dataset.id };
+                
+                const isSeries = card.classList.contains('series-card') || card.dataset.category === 'Series';
+                
+                selectedItem = {
+                    id: card.dataset.id,
+                    type: isSeries ? 'series' : 'gallery',
+                    dataset: card.dataset
+                };
+
+                // Configure Menu Items dynamically based on type
+                const readBtn = document.getElementById('ctx-read');
+                const dlBtn = document.getElementById('ctx-download');
+                
+                if (isSeries) {
+                    readBtn.innerText = "Open Series";
+                    readBtn.onclick = () => window.location.href = `/series/${selectedItem.id}`;
+                    dlBtn.onclick = () => downloadSeries(selectedItem.id);
+                } else {
+                    readBtn.innerText = "Read";
+                    readBtn.onclick = () => window.location.href = `/reader/${selectedItem.id}`;
+                    dlBtn.onclick = () => window.location.href = `/api/download/${selectedItem.id}`;
+                }
+
                 const menu = document.getElementById('context-menu');
                 menu.style.display = 'block';
                 menu.style.left = `${event.pageX}px`;
@@ -241,14 +262,16 @@
             document.getElementById('context-menu').style.display = 'none';
         });
 
-        function openReaderFromCtx() {
-            if(selectedGallery) window.location.href = `/reader/${selectedGallery.id}`;
+        function downloadSeries(id) {
+            if(confirm("Warning: This will download a single ZIP containing ALL galleries in this series. It may be very large. Continue?")) {
+                window.location.href = `/api/download/series/${id}`;
+            }
         }
 
         async function openEditModal() {
-            if(!selectedGallery) return;
+            if(!selectedItem) return;
             
-            // Populate Category Dropdown
+            // Load Categories
             const res = await fetch('/api/categories');
             const cats = await res.json();
             const select = document.getElementById('edit_category');
@@ -261,48 +284,64 @@
             });
 
             // Fill Form
-            const card = document.querySelector(`.card[data-id="${selectedGallery.id}"]`);
-            document.getElementById('edit_id').value = selectedGallery.id;
-            document.getElementById('edit_title').value = card.dataset.title;
-            document.getElementById('edit_artist').value = card.dataset.artist;
-            document.getElementById('edit_series').value = card.dataset.series;
-            document.getElementById('edit_category').value = card.dataset.category;
-            document.getElementById('edit_tags').value = card.dataset.tags;
-            document.getElementById('edit_desc').value = card.dataset.desc;
+            document.getElementById('edit_id').value = selectedItem.id;
+            document.getElementById('edit_type').value = selectedItem.type;
+            
+            document.getElementById('edit_title').value = selectedItem.dataset.title;
+            document.getElementById('edit_artist').value = selectedItem.dataset.artist;
+            document.getElementById('edit_category').value = selectedItem.dataset.category;
+            document.getElementById('edit_tags').value = selectedItem.dataset.tags;
+            document.getElementById('edit_desc').value = selectedItem.dataset.desc;
+
+            // Toggle Series Input
+            const seriesDiv = document.getElementById('div-edit-series');
+            if (selectedItem.type === 'series') {
+                seriesDiv.style.display = 'none'; // Can't add series to series
+                document.getElementById('modal-title').innerText = "Edit Series Metadata";
+            } else {
+                seriesDiv.style.display = 'block';
+                document.getElementById('modal-title').innerText = "Edit Gallery Metadata";
+                // If it's a gallery, fill the series box
+                document.getElementById('edit_series_name').value = selectedItem.dataset.series || ""; 
+            }
 
             document.getElementById('edit-modal').style.display = 'flex';
         }
-
+        
         function closeEditModal() {
             document.getElementById('edit-modal').style.display = 'none';
         }
 
         async function saveEdit() {
             const id = document.getElementById('edit_id').value;
+            const type = document.getElementById('edit_type').value;
+            
             const payload = {
                 title: document.getElementById('edit_title').value,
                 artist: document.getElementById('edit_artist').value,
-                series: document.getElementById('edit_series').value,
                 category: document.getElementById('edit_category').value,
                 tags: document.getElementById('edit_tags').value.split(',').map(t=>t.trim()),
                 description: document.getElementById('edit_desc').value,
-                direction: "LTR" 
+                direction: "LTR"
             };
-
-            await fetch(`/api/gallery/${id}/update`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
-            });
             
-            location.reload(); 
-        }
-
-        function downloadGalleryFromCtx() {
-            if(selectedGallery) {
-                // Trigger the download by navigating to the URL
-                window.location.href = `/api/download/${selectedGallery.id}`;
+            if (type === 'series') {
+                // Map title -> name for backend
+                payload.name = payload.title;
+                await fetch(`/api/series/${id}/update`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                payload.series = document.getElementById('edit_series_name').value;
+                await fetch(`/api/gallery/${id}/update`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
             }
+            location.reload(); 
         }
 
         // Init

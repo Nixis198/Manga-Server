@@ -1,14 +1,18 @@
-import logging
-import time
+import os
 import shutil
+import logging
+import zipfile
+import io
+import time
 import json
 from datetime import datetime
-from fastapi import FastAPI, Depends, HTTPException, Response, Request, UploadFile, File
-from fastapi.staticfiles import StaticFiles
+from typing import List, Optional
+
+from fastapi import FastAPI, Request, Depends, HTTPException, UploadFile, File, Response
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-import os
 
 # Import our local modules
 from . import database, schemas
@@ -26,35 +30,26 @@ LOG_FILE = os.path.join(DATA_DIR, "logs", "server.log")
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 # --- SETUP LOGGING ---
-# We configure this at the module level so it runs before the app starts
 logging.basicConfig(
     filename=LOG_FILE, 
     level=logging.INFO, 
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
-    force=True # Force usage of our settings
+    force=True
 )
 logger = logging.getLogger(__name__)
 
 # Initialize App
 app = FastAPI(title="Manga Server")
 
-# --- MIDDLEWARE (Logs every request) ---
+# --- MIDDLEWARE ---
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = time.time()
-    
-    # Process the request
     response = await call_next(request)
-    
-    # Calculate duration
     process_time = (time.time() - start_time) * 1000
-    
-    # Log format: "GET /api/library - 200 OK - 15ms"
-    # We skip logging the /api/logs endpoint itself to prevent infinite loops in the log viewer
     if "/api/logs" not in request.url.path:
         logger.info(f"{request.method} {request.url.path} - {response.status_code} - {process_time:.2f}ms")
-    
     return response
 
 # Dependency to get DB session
@@ -65,64 +60,52 @@ def get_db():
     finally:
         db.close()
 
+# --- HELPERS ---
+
 def get_series_cover(series):
+    """ Determines the correct thumbnail URL based on settings. """
     if not series.galleries:
         return ""
-    
-    # Sort galleries
+        
+    # Sort galleries to ensure deterministic order
     sorted_gals = sorted(series.galleries, key=lambda x: (x.sort_order, x.id))
     
     # CASE A: User selected "Currently Reading"
     if series.thumbnail_url == "__reading__":
-        # Find first 'Reading'. If none, check for 'New' or just take the first one.
-        # Actually, let's prioritize 'Reading' -> 'New' -> 'Completed' (wrap around)
         reading_gal = next((g for g in sorted_gals if g.status == "Reading"), None)
         if reading_gal:
             return f"/thumbnails/{reading_gal.id}.jpg"
-        
-        # Fallback: Just return the first one
         return f"/thumbnails/{sorted_gals[0].id}.jpg"
 
-    # CASE B: Specific static URL
+    # CASE B: Specific static URL chosen
     if series.thumbnail_url:
         return series.thumbnail_url
         
-    # CASE C: Default
+    # CASE C: Default (First gallery)
     return f"/thumbnails/{sorted_gals[0].id}.jpg"
 
 def build_search_string(title, artist, extra_list=None):
-    """Creates a lowercase searchable string from metadata"""
+    """ Creates a lowercase searchable string from metadata """
     terms = [title, artist]
     if extra_list:
         terms.extend(extra_list)
-    # Filter None values and join
     return " ".join([str(t).lower() for t in terms if t])
 
 @app.on_event("startup")
 async def startup_event():
-    # 1. Create necessary directories
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(LIBRARY_DIR, exist_ok=True)
     os.makedirs(THUMBNAIL_DIR, exist_ok=True)
-    
-    # 2. Initialize Database
     database.init_db()
-    logger.info("------------------------------------------------")
-    logger.info(f"SERVER STARTED SUCCESSFULLY")
-    logger.info(f"Monitoring Input Directory: {INPUT_DIR}")
-    logger.info("------------------------------------------------")
+    logger.info("Server Started Successfully")
 
-# Mount Static Files (CSS, JS)
-# We will create the 'static' folder later for the frontend
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.mount("/thumbnails", StaticFiles(directory=THUMBNAIL_DIR), name="thumbnails")
-
-# Initialize Templates
 templates = Jinja2Templates(directory="app/templates")
 
-# --- API Endpoints ---
+# --- API ENDPOINTS: PAGES ---
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def read_root(request: Request, db: Session = Depends(get_db)):
     items = []
     
@@ -135,12 +118,13 @@ def read_root(request: Request, db: Session = Depends(get_db)):
             "title": g.title,
             "artist": g.artist,
             "status": g.status,
+            "pages_read": g.pages_read,
+            "pages_total": g.pages_total,
             "category": g.category.name if g.category else "",
             "thumb": f"/thumbnails/{g.id}.jpg",
             "series": "", 
             "tags": [t.name for t in g.tags],
             "description": g.description if g.description else "", # type: ignore
-            # NEW: Search Data (Title + Artist)
             "search_data": build_search_string(g.title, g.artist)
         })
 
@@ -154,594 +138,60 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         total_count = len(s.galleries)
         read_count = sum(1 for g in s.galleries if g.status == "Completed")
         
-        # NEW: Aggregate Search Data (Series Name + All Chapter Titles + All Artists)
+        # FIX: Check if ANY gallery is "Reading" or "Completed"
+        # If even one gallery is not "New", the series is no longer "New"
+        any_progress = any(g.status != "New" for g in s.galleries)
+        
+        # ... (Tag logic remains the same) ...
+        series_tags = [t.name for t in s.tags]
+        child_tags = []
+        for g in s.galleries:
+            for t in g.tags:
+                child_tags.append(t.name)
+        all_search_tags = list(set(series_tags + child_tags))
+        
+        if series_tags:
+            display_tags = series_tags
+        else:
+            display_tags = sorted(list(set(child_tags)))
+
+        # Build search blob
         child_titles = [g.title for g in s.galleries]
         child_artists = [g.artist for g in s.galleries]
-        # Combine all into one big searchable blob
-        search_blob = build_search_string(s.name, "Various", child_titles + child_artists)
+        search_blob = build_search_string(s.name, s.artist, child_titles + child_artists + all_search_tags)
 
         items.append({
             "type": "series",
             "id": s.id,
             "title": s.name,
-            "artist": "Various", 
+            "artist": s.artist if s.artist else "Various",  # type: ignore
             "status": f"{len(s.galleries)} Items", 
-            "category": "Series",
+            "category": s.category.name if s.category else "Series",
             "thumb": thumb,
             "count": total_count,
-            "read_count": read_count, 
+            "read_count": read_count,
+            "is_new": not any_progress, # <--- SEND THIS FLAG
             "series": s.name,
-            "tags": [],
+            "tags": display_tags,
             "description": s.description if s.description else "", # type: ignore
-            # NEW: Search Data
             "search_data": search_blob
         })
 
-        items.sort(key=lambda x: x['title'].lower())
+    # Sort Alphabetically
+    items.sort(key=lambda x: x['title'].lower())
         
     return templates.TemplateResponse("library.html", {
         "request": request, 
         "galleries": items
     })
 
-@app.post("/api/scan")
-def scan_input_folder():
-    """
-    Triggers a scan of the 'Input' folder.
-    Returns the count of new files found and total staged files.
-    """
-    result = scanner.scan_input_directory(INPUT_DIR)
-    return result
-
-@app.get("/api/staged")
-def get_staged_files(db: Session = Depends(get_db)):
-    """
-    Returns a list of all files currently in the staging area.
-    """
-    files = db.query(database.StagedFile).all()
-    return files
-
-@app.get("/api/staged/{file_id}/cover")
-def get_staged_cover(file_id: int, db: Session = Depends(get_db)):
-    """
-    Extracts the first image from a staged ZIP file and serves it directly.
-    This allows the UI to show a preview without extracting the whole comic.
-    """
-    staged_file = db.query(database.StagedFile).filter(database.StagedFile.id == file_id).first()
-    
-    if not staged_file:
-        raise HTTPException(status_code=404, detail="File not found")
-        
-    image_data = scanner.get_cover_from_zip(str(staged_file.path))
-    
-    if image_data:
-        # We assume JPEG for now, but browsers are smart enough to handle PNGs sent as image/jpeg usually.
-        # Ideally, we would detect the mime type, but this is sufficient for a prototype.
-        return Response(content=image_data, media_type="image/jpeg")
-    else:
-        raise HTTPException(status_code=404, detail="No images found in archive")
-
-@app.get("/api/library")
-def get_library(db: Session = Depends(get_db)):
-    # ... (Logic is identical to read_root above) ...
-    # You can actually refactor this to share code, but for now, just copy-paste the logic above.
-    # COPY THE EXACT LOGIC FROM read_root HERE
-    
-    items = []
-    
-    # 1. Standalone
-    standalone = db.query(database.Gallery).filter(database.Gallery.series_id == None).all()
-    for g in standalone:
-        items.append({
-            "type": "gallery",
-            "id": g.id,
-            "title": g.title,
-            "artist": g.artist,
-            "status": g.status,
-            "category": g.category.name if g.category else "",
-            "thumb": f"/thumbnails/{g.id}.jpg",
-            "series": "", 
-            "tags": [t.name for t in g.tags], 
-            "description": g.description if g.description else "", # type: ignore
-            "search_data": build_search_string(g.title, g.artist) # <--- Added
-        })
-
-    # 2. Series
-    all_series = db.query(database.Series).all()
-    for s in all_series:
-        if not s.galleries:
-            continue
-            
-        thumb = get_series_cover(s)
-        total_count = len(s.galleries)
-        read_count = sum(1 for g in s.galleries if g.status == "Completed")
-        
-        # NEW: Aggregate Search Data
-        child_titles = [g.title for g in s.galleries]
-        child_artists = [g.artist for g in s.galleries]
-        search_blob = build_search_string(s.name, "Various", child_titles + child_artists)
-            
-        items.append({
-            "type": "series",
-            "id": s.id,
-            "title": s.name,
-            "artist": "Various", 
-            "category": "Series",
-            "thumb": thumb,
-            "count": total_count,
-            "read_count": read_count, 
-            "status": "Series", 
-            "series": s.name,
-            "tags": [],
-            "description": s.description if s.description else "", # type: ignore
-            "search_data": search_blob # <--- Added
-        })
-
-        items.sort(key=lambda x: x['title'].lower())
-        
-    return items
-
-@app.post("/api/import/{staged_id}")
-def import_comic(staged_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
-    """
-    Moves a file from Staging to Library with the provided metadata.
-    """
-    try:
-        gallery = importer.import_gallery(db, staged_id, request, DATA_DIR)
-        return {"status": "success", "gallery_id": gallery.id, "title": gallery.title}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-@app.get("/staging")
-def read_staging(request: Request):
-    return templates.TemplateResponse("staging.html", {"request": request})
-
-@app.get("/api/read/{gallery_id}/{page}")
-def read_page(gallery_id: int, page: int, db: Session = Depends(get_db)):
-    """
-    Serves a single image from inside the gallery archive.
-    """
-    image_data = reader.get_page_image(db, gallery_id, page)
-    return Response(content=image_data, media_type="image/jpeg")
-
-@app.get("/reader/{gallery_id}")
-def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)):
-    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
-    if not gallery:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    
-    return templates.TemplateResponse("reader.html", {
-        "request": request, 
-        "gallery": gallery
-    })
-
-@app.post("/api/progress/{gallery_id}/{page}")
-def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
-    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
-    if not gallery:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    
-    # Update Page
-    # The IDE complains because it sees a 'Column' object, not an 'int'.
-    # We add '# type: ignore' to silence this specific error.
-    gallery.pages_read = page # type: ignore
-    
-    # Update Status Logic
-    total = gallery.pages_total # type: ignore
-    
-    if total and page >= total: # type: ignore
-        gallery.status = "Completed" # type: ignore
-    elif page > 1:
-        gallery.status = "Reading" # type: ignore
-    else:
-        gallery.status = "New" # type: ignore
-        
-    db.commit()
-    return {"status": "updated", "current_status": gallery.status}
-
-@app.post("/api/gallery/{gallery_id}/update")
-def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
-    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
-    if not gallery:
-        logger.warning(f"Update failed: Gallery ID {gallery_id} not found.")
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    
-    old_title = gallery.title
-    
-    # --- 1. FILE MOVEMENT LOGIC ---
-    # We calculate the target path based on the NEW metadata (Artist + Series)
-    try:
-        # A. Sanitize New Artist
-        safe_new_artist = "".join([c for c in request.artist if c.isalpha() or c.isdigit() or c in " -_"]).strip()
-        
-        # B. Sanitize New Series (if provided)
-        safe_new_series = ""
-        if request.series:
-            safe_new_series = "".join([c for c in request.series if c.isalpha() or c.isdigit() or c in " -_"]).strip()
-
-        # C. Construct Target Folder
-        # Logic: Library / Artist / [Series] / File.zip
-        if safe_new_series:
-            new_folder = os.path.join(LIBRARY_DIR, safe_new_artist, safe_new_series)
-        else:
-            new_folder = os.path.join(LIBRARY_DIR, safe_new_artist)
-
-        # D. Construct Target File Path
-        filename = os.path.basename(gallery.path) # type: ignore
-        new_path = os.path.join(new_folder, filename)
-        
-        # E. Compare & Move
-        # If the path has changed (due to Artist change OR Series change), move it.
-        if new_path != gallery.path:
-            logger.info(f"Path change detected. Moving: '{gallery.path}' -> '{new_path}'")
-            
-            # Create new directory
-            os.makedirs(new_folder, exist_ok=True)
-            
-            # Move the file
-            shutil.move(gallery.path, new_path) # type: ignore
-            
-            # Save old path for cleanup
-            old_path = gallery.path
-            
-            # Update DB
-            gallery.path = new_path # type: ignore
-            
-            # Cleanup: Delete old folder if empty
-            # We check the folder the file USED to be in
-            old_dir = os.path.dirname(old_path) # type: ignore
-            try:
-                if os.path.exists(old_dir) and not os.listdir(old_dir):
-                    os.rmdir(old_dir)
-                    logger.info(f"Deleted empty folder: {old_dir}")
-                    
-                    # Optional: If we just deleted a Series folder, check if the Artist folder above it is empty too
-                    parent_dir = os.path.dirname(old_dir)
-                    if os.path.exists(parent_dir) and not os.listdir(parent_dir):
-                        os.rmdir(parent_dir)
-                        logger.info(f"Deleted empty parent folder: {parent_dir}")
-            except Exception as e:
-                logger.warning(f"Cleanup warning: {e}")
-
-    except Exception as e:
-        logger.error(f"Failed to move file during metadata update: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to move file: {e}")
-
-    # --- 2. METADATA UPDATES ---
-
-    # Update basic fields
-    gallery.title = request.title # type: ignore
-    gallery.artist = request.artist # type: ignore
-    gallery.description = request.description # type: ignore
-    gallery.reading_direction = request.direction # type: ignore
-    
-    # Update Series
-    if request.series:
-        series = db.query(database.Series).filter(database.Series.name == request.series).first()
-        if not series:
-            series = database.Series(name=request.series)
-            db.add(series)
-            db.flush()
-        gallery.series_id = series.id
-    else:
-        gallery.series_id = None # type: ignore
-
-    # Update Category
-    if request.category:
-        cat = db.query(database.Category).filter(database.Category.name == request.category).first()
-        if not cat:
-            cat = database.Category(name=request.category)
-            db.add(cat)
-            db.flush()
-        gallery.category_id = cat.id
-    else:
-        gallery.category_id = None # type: ignore
-
-    # Update Tags
-    gallery.tags.clear()
-    for tag_name in request.tags:
-        tag = db.query(database.Tag).filter(database.Tag.name == tag_name).first()
-        if not tag:
-            tag = database.Tag(name=tag_name)
-            db.add(tag)
-        gallery.tags.append(tag)
-
-    db.commit()
-    logger.info(f"Metadata updated for ID {gallery_id}: '{old_title}' -> '{gallery.title}'")
-    return {"status": "success"}
-
-# --- SETTINGS API ---
-
-@app.get("/api/settings")
-def get_settings(db: Session = Depends(get_db)):
-    settings_list = db.query(database.Settings).all()
-    settings_dict = {s.key: s.value for s in settings_list}
-    
-    # Defaults
-    if "default_direction" not in settings_dict:
-        settings_dict["default_direction"] = "LTR" # type: ignore
-    
-    # NEW: Default for the toggle
-    if "show_uncategorized" not in settings_dict:
-        settings_dict["show_uncategorized"] = "false" # type: ignore
-        
-    return settings_dict
-
-@app.post("/api/settings")
-def save_settings(payload: dict, db: Session = Depends(get_db)):
-    for key, value in payload.items():
-        setting = db.query(database.Settings).filter(database.Settings.key == key).first()
-        if not setting:
-            setting = database.Settings(key=key, value=str(value))
-            db.add(setting)
-        else:
-            setting.value = str(value) # type: ignore
-    db.commit()
-    logging.info("Settings updated by user.")
-    return {"status": "saved"}
-
-# --- LOGS API ---
-
-@app.get("/api/logs")
-def get_logs():
-    """Reads the last 100 lines of the log file"""
-    if not os.path.exists(LOG_FILE):
-        return {"logs": "Log file not created yet."}
-    
-    try:
-        with open(LOG_FILE, "r") as f:
-            # Simple tail implementation
-            lines = f.readlines()
-            last_lines = lines[-100:] # Get last 100
-            return {"logs": "".join(last_lines)}
-    except Exception as e:
-        return {"logs": f"Error reading logs: {e}"}
-
-# --- ROUTE FOR THE PAGE ---
-@app.get("/settings")
-def read_settings_page(request: Request):
-    return templates.TemplateResponse("settings.html", {"request": request})
-
-# --- CATEGORY MANAGEMENT API ---
-
-@app.get("/api/categories")
-def get_categories(db: Session = Depends(get_db)):
-    """
-    Returns a list of categories with the count of galleries in each.
-    """
-    categories = db.query(database.Category).all()
-    result = []
-    for cat in categories:
-        result.append({
-            "id": cat.id, 
-            "name": cat.name, 
-            "count": len(cat.galleries) # SQLAlchemy relationship makes this easy
-        })
-    return result
-
-@app.post("/api/categories")
-def create_category(payload: dict, db: Session = Depends(get_db)):
-    name = payload.get("name", "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Name cannot be empty")
-    
-    existing = db.query(database.Category).filter(database.Category.name == name).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Category already exists")
-    
-    new_cat = database.Category(name=name)
-    db.add(new_cat)
-    db.commit()
-    return {"status": "created", "id": new_cat.id, "name": new_cat.name}
-
-@app.delete("/api/categories/{cat_id}")
-def delete_category(cat_id: int, force: bool = False, db: Session = Depends(get_db)):
-    cat = db.query(database.Category).filter(database.Category.id == cat_id).first()
-    if not cat:
-        raise HTTPException(status_code=404, detail="Category not found")
-    
-    # Check if empty
-    if len(cat.galleries) > 0 and not force:
-        return {
-            "status": "conflict", 
-            "message": f"This category contains {len(cat.galleries)} galleries.",
-            "count": len(cat.galleries)
-        }
-    
-    # If force is True, or empty, we delete.
-    # Note: Because of SQLAlchemy relationships, we need to ensure we don't delete the galleries, just the link.
-    # Setting the relationship to None happens automatically if we don't use 'cascade=delete'.
-    # But let's be explicit to be safe:
-    for gallery in cat.galleries:
-        gallery.category_id = None
-        
-    db.delete(cat)
-    db.commit()
-    return {"status": "deleted"}
-
-@app.delete("/api/logs")
-def clear_logs():
-    """Clears the log file content"""
-    if os.path.exists(LOG_FILE):
-        # Open in 'w' mode to truncate/wipe the file
-        with open(LOG_FILE, 'w') as f:
-            pass 
-            
-        # Add a fresh log entry so it's not totally empty
-        logger.info("Logs cleared by user.")
-        
-    return {"status": "cleared"}
-
-# --- BACKUP & RESTORE API ---
-
-@app.get("/api/backup")
-def backup_database(db: Session = Depends(get_db)):
-    """
-    Exports all database tables to a JSON structure.
-    """
-    data = {
-        "timestamp": str(datetime.now()),
-        "version": "1.0",
-        "categories": [],
-        "series": [],
-        "tags": [],
-        "galleries": [],
-        "settings": []
-    }
-
-    # 1. Export Categories
-    for c in db.query(database.Category).all():
-        data["categories"].append({"id": c.id, "name": c.name})
-
-    # 2. Export Series
-    for s in db.query(database.Series).all():
-        data["series"].append({"id": s.id, "name": s.name, "description": s.description})
-
-    # 3. Export Tags
-    for t in db.query(database.Tag).all():
-        data["tags"].append({"id": t.id, "name": t.name})
-
-    # 4. Export Settings
-    for s in db.query(database.Settings).all():
-        data["settings"].append({"key": s.key, "value": s.value})
-
-    # 5. Export Galleries
-    # We need to manually construct this to handle relationships (tags)
-    for g in db.query(database.Gallery).all():
-        g_data = {
-            "id": g.id,
-            "filename": g.filename,
-            "path": g.path,
-            "title": g.title,
-            "artist": g.artist,
-            "status": g.status,
-            "pages_read": g.pages_read,
-            "pages_total": g.pages_total,
-            "reading_direction": g.reading_direction,
-            "series_id": g.series_id,
-            "category_id": g.category_id,
-            "description": g.description,
-            "tag_names": [t.name for t in g.tags] # Store names to link back later
-        }
-        data["galleries"].append(g_data)
-
-    return data
-
-@app.post("/api/restore")
-async def restore_database(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """
-    Wipes the DB and restores from JSON.
-    """
-    try:
-        content = await file.read()
-        data = json.loads(content)
-        
-        # 1. WIPE TABLES (Order matters for Foreign Keys)
-        # Clear relationships first
-        db.query(database.gallery_tags).delete()
-        db.query(database.Gallery).delete()
-        db.query(database.Series).delete()
-        db.query(database.Category).delete()
-        db.query(database.Tag).delete()
-        db.query(database.Settings).delete()
-        db.commit()
-
-        # 2. RESTORE (Keep original IDs to preserve file links)
-        
-        # Categories
-        for c in data.get("categories", []):
-            db.add(database.Category(id=c["id"], name=c["name"]))
-        
-        # Series
-        for s in data.get("series", []):
-            db.add(database.Series(id=s["id"], name=s["name"], description=s.get("description")))
-            
-        # Tags
-        tag_map = {} # Cache for quick lookup during gallery restore
-        for t in data.get("tags", []):
-            new_tag = database.Tag(id=t["id"], name=t["name"])
-            db.add(new_tag)
-            tag_map[t["name"]] = new_tag
-            
-        # Settings
-        for s in data.get("settings", []):
-            db.add(database.Settings(key=s["key"], value=s["value"]))
-            
-        db.commit() # Commit base tables before galleries
-        
-        # Galleries
-        for g in data.get("galleries", []):
-            new_gallery = database.Gallery(
-                id=g["id"],
-                filename=g["filename"],
-                path=g["path"],
-                title=g["title"],
-                artist=g["artist"],
-                status=g["status"],
-                pages_read=g.get("pages_read", 0),
-                pages_total=g.get("pages_total", 0),
-                reading_direction=g.get("reading_direction", "LTR"),
-                series_id=g["series_id"],
-                category_id=g["category_id"],
-                description=g.get("description")
-            )
-            
-            # Re-link Tags
-            for t_name in g.get("tag_names", []):
-                if t_name in tag_map:
-                    new_gallery.tags.append(tag_map[t_name])
-            
-            db.add(new_gallery)
-            
-        db.commit()
-        logger.info("Database restored successfully from backup.")
-        return {"status": "success", "message": "Database restored."}
-
-    except Exception as e:
-        logger.error(f"Restore failed: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
-    
-    # --- UPLOAD API ---
-@app.get("/upload")
-def upload_page(request: Request):
-    return templates.TemplateResponse("upload.html", {"request": request})
-
-@app.post("/api/upload")
-async def upload_gallery(file: UploadFile = File(...)):
-    """
-    Receives a file and streams it to the Input folder.
-    """
-    try:
-        # Security check: Ensure it's a zip/cbz
-        if not file.filename.lower().endswith(('.zip', '.cbz')): # type: ignore
-            raise HTTPException(status_code=400, detail="Only .zip and .cbz files are allowed.")
-        
-        file_location = os.path.join(INPUT_DIR, file.filename) # type: ignore
-        
-        # Write file to disk in chunks (memory efficient)
-        with open(file_location, "wb+") as file_object:
-            shutil.copyfileobj(file.file, file_object)
-            
-        return {"filename": file.filename, "status": "success"}
-    except Exception as e:
-        logger.error(f"Upload failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
-    
-    # --- SERIES API ---
-
-@app.get("/series/{series_id}")
+@app.get("/series/{series_id}", response_class=HTMLResponse)
 def view_series_page(series_id: int, request: Request, db: Session = Depends(get_db)):
     series = db.query(database.Series).filter(database.Series.id == series_id).first()
     if not series:
         raise HTTPException(status_code=404, detail="Series not found")
         
-    # Sort galleries by our new sort_order column
     galleries = sorted(series.galleries, key=lambda x: (x.sort_order, x.id))
-    
-    # Calculate the cover for display
     cover_url = get_series_cover(series)
     
     return templates.TemplateResponse("series.html", {
@@ -751,156 +201,402 @@ def view_series_page(series_id: int, request: Request, db: Session = Depends(get
         "cover_url": cover_url
     })
 
-@app.post("/api/series/{series_id}/update")
-def update_series(series_id: int, payload: dict, db: Session = Depends(get_db)):
-    series = db.query(database.Series).filter(database.Series.id == series_id).first()
-    if not series:
-        raise HTTPException(status_code=404, detail="Series not found")
-
-    if "name" in payload:
-        series.name = payload["name"]
-        
-    # NEW: Handle Thumbnail Update
-    if "thumbnail_url" in payload:
-        series.thumbnail_url = payload["thumbnail_url"]
+@app.get("/reader/{gallery_id}", response_class=HTMLResponse)
+def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)):
+    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
     
+    # Auto-update status to Reading if New
+    if gallery.status == "New": # type: ignore
+        gallery.status = "Reading" # type: ignore
+        db.commit()
+    
+    return templates.TemplateResponse("reader.html", {"request": request, "gallery": gallery})
+
+@app.get("/staging", response_class=HTMLResponse)
+def read_staging(request: Request):
+    return templates.TemplateResponse("staging.html", {"request": request})
+
+@app.get("/settings", response_class=HTMLResponse)
+def read_settings_page(request: Request):
+    return templates.TemplateResponse("settings.html", {"request": request})
+
+@app.get("/upload", response_class=HTMLResponse)
+def upload_page(request: Request):
+    return templates.TemplateResponse("upload.html", {"request": request})
+
+# --- API ENDPOINTS: ACTIONS ---
+
+@app.post("/api/scan")
+def scan_input_folder():
+    return scanner.scan_input_directory(INPUT_DIR)
+
+@app.get("/api/staged")
+def get_staged_files(db: Session = Depends(get_db)):
+    return db.query(database.StagedFile).all()
+
+@app.get("/api/staged/{file_id}/cover")
+def get_staged_cover_img(file_id: int, db: Session = Depends(get_db)):
+    staged = db.query(database.StagedFile).filter(database.StagedFile.id == file_id).first()
+    if not staged: return Response(status_code=404)
+    img = scanner.get_cover_from_zip(str(staged.path))
+    if img: return Response(content=img, media_type="image/jpeg")
+    return Response(status_code=404)
+
+@app.post("/api/import/{staged_id}")
+def import_comic(staged_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
+    try:
+        gallery = importer.import_gallery(db, staged_id, request, DATA_DIR)
+        return {"status": "success", "gallery_id": gallery.id}
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+@app.get("/api/read/{gallery_id}/{page}")
+def read_page_image(gallery_id: int, page: int, db: Session = Depends(get_db)):
+    image_data = reader.get_page_image(db, gallery_id, page)
+    return Response(content=image_data, media_type="image/jpeg")
+
+@app.post("/api/progress/{gallery_id}/{page}")
+def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
+    g = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not g: raise HTTPException(404, "Not found")
+    
+    g.pages_read = page # type: ignore
+    if g.pages_total and page >= g.pages_total: # type: ignore
+        g.status = "Completed" # type: ignore
+    elif page > 1:
+        g.status = "Reading" # type: ignore
+    else:
+        g.status = "New" # type: ignore
+
+    db.commit()
+    return {"status": "updated"}
+
+# --- METADATA UPDATES (Gallery & Series) ---
+
+@app.post("/api/gallery/{gallery_id}/update")
+def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db: Session = Depends(get_db)):
+    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not gallery: raise HTTPException(404, "Gallery not found")
+    
+    # 1. Update Basic Fields
+    gallery.title = request.title # type: ignore
+    gallery.artist = request.artist # type: ignore
+    gallery.description = request.description # type: ignore
+    if request.direction: gallery.reading_direction = request.direction # type: ignore
+    
+    # 2. Handle Series
+    if request.series:
+        s = db.query(database.Series).filter(database.Series.name == request.series).first()
+        if not s:
+            s = database.Series(name=request.series)
+            db.add(s)
+            db.flush()
+        gallery.series_id = s.id
+    else:
+        gallery.series_id = None # type: ignore
+
+    # 3. Handle Category
+    if request.category:
+        c = db.query(database.Category).filter(database.Category.name == request.category).first()
+        if not c:
+            c = database.Category(name=request.category)
+            db.add(c)
+            db.flush()
+        gallery.category_id = c.id
+    else:
+        gallery.category_id = None # type: ignore
+
+    # 4. Handle Tags
+    gallery.tags.clear()
+    for t_name in request.tags:
+        t = db.query(database.Tag).filter(database.Tag.name == t_name).first()
+        if not t:
+            t = database.Tag(name=t_name)
+            db.add(t)
+        gallery.tags.append(t)
+        
+    db.commit()
+    return {"status": "success"}
+
+@app.post("/api/series/{series_id}/update")
+def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(get_db)):
+    s = db.query(database.Series).filter(database.Series.id == series_id).first()
+    if not s: raise HTTPException(404, "Series not found")
+    
+    if "name" in payload: s.name = payload["name"]
+    if "thumbnail_url" in payload: s.thumbnail_url = payload["thumbnail_url"]
+    if "artist" in payload: s.artist = payload["artist"]
+    if "description" in payload: s.description = payload["description"]
+    
+    # Update Category
+    if "category" in payload:
+        c_name = payload["category"]
+        if c_name:
+            c = db.query(database.Category).filter(database.Category.name == c_name).first()
+            if not c:
+                c = database.Category(name=c_name)
+                db.add(c)
+            s.category = c
+        else:
+            s.category = None
+
+    # Update Tags
+    if "tags" in payload:
+        s.tags.clear()
+        for t_name in payload["tags"]:
+            t_name = t_name.strip()
+            if not t_name: continue
+            t = db.query(database.Tag).filter(database.Tag.name == t_name).first()
+            if not t:
+                t = database.Tag(name=t_name)
+                db.add(t)
+            s.tags.append(t)
+
+    # Update Sort Order
     if "order" in payload:
-        for idx, gal_id in enumerate(payload["order"]):
-            gal = next((g for g in series.galleries if g.id == int(gal_id)), None)
-            if gal:
-                gal.sort_order = idx + 1 
+        for idx, g_id in enumerate(payload["order"]):
+            g = db.query(database.Gallery).filter(database.Gallery.id == g_id).first()
+            if g and g.series_id == s.id: # type: ignore
+                g.sort_order = idx + 1 # type: ignore 
                 
     db.commit()
     return {"status": "success"}
 
-# --- PLUGIN API ---
+# --- DOWNLOADS ---
+
+@app.get("/api/download/{gallery_id}")
+def download_gallery(gallery_id: int, db: Session = Depends(get_db)):
+    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not gallery or not os.path.exists(gallery.path): # type: ignore
+        raise HTTPException(404, "File not found")
+    return FileResponse(path=gallery.path, filename=os.path.basename(gallery.path), media_type='application/octet-stream') # type: ignore
+
+@app.get("/api/download/series/{series_id}")
+def download_series(series_id: int, db: Session = Depends(get_db)):
+    series = db.query(database.Series).filter(database.Series.id == series_id).first()
+    if not series: raise HTTPException(404, "Series not found")
+    
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_STORED) as zf:
+        for gallery in series.galleries:
+            if os.path.exists(gallery.path):
+                zf.write(gallery.path, arcname=gallery.filename)
+                
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        iter([zip_buffer.getvalue()]), 
+        media_type="application/zip", 
+        headers={"Content-Disposition": f"attachment; filename={series.name}.zip"}
+    )
+
+# --- PLUGINS ---
 
 @app.get("/api/plugins")
 def get_plugins(db: Session = Depends(get_db)):
-    """
-    Returns list of installed plugins and their required config fields,
-    pre-filled with saved values from DB.
-    """
     loaded = manager.load_plugins()
     results = []
-    
     for p_id, p_class in loaded.items():
-        # Instantiate to access properties
-        plugin = p_class() 
+        plugin = p_class()
+        saved = db.query(database.PluginConfig).filter(database.PluginConfig.plugin_id == p_id).all()
+        config_map = {c.key: c.value for c in saved}
         
-        # Fetch saved configs for this plugin from DB
-        saved_configs = db.query(database.PluginConfig).filter(database.PluginConfig.plugin_id == p_id).all()
-        config_map = {c.key: c.value for c in saved_configs}
-        
-        # Merge saved values into the field definitions
         fields = []
-        for field in plugin.config_fields:
-            fields.append({
-                "key": field["key"],
-                "label": field["label"],
-                "value": config_map.get(field["key"], "") # type: ignore
-            })
+        for f in plugin.config_fields:
+            fields.append({"key": f["key"], "label": f["label"], "value": config_map.get(f["key"], "")})
             
         results.append({
-            "id": plugin.id,
-            "name": plugin.name,
+            "id": plugin.id, 
+            "name": plugin.name, 
+            "version": getattr(plugin, 'version', 1.0), 
             "fields": fields
         })
-        
     return results
 
 @app.post("/api/plugins/config")
 def save_plugin_config(payload: dict, db: Session = Depends(get_db)):
-    """
-    Saves plugin settings (cookies, keys) to the database.
-    Payload: {"plugin_id": "fakku", "config": {"fakku_sid": "123", ...}}
-    """
     p_id = payload.get("plugin_id")
-    config_data = payload.get("config", {})
-    
-    for key, value in config_data.items():
-        # Check if setting exists
-        setting = db.query(database.PluginConfig).filter(
-            database.PluginConfig.plugin_id == p_id, 
-            database.PluginConfig.key == key
-        ).first()
-        
-        if not setting:
-            # Create new
-            setting = database.PluginConfig(plugin_id=p_id, key=key, value=str(value))
-            db.add(setting)
+    cfg = payload.get("config", {})
+    for k, v in cfg.items():
+        s = db.query(database.PluginConfig).filter(database.PluginConfig.plugin_id == p_id, database.PluginConfig.key == k).first()
+        if not s:
+            db.add(database.PluginConfig(plugin_id=p_id, key=k, value=str(v)))
         else:
-            # Update existing
-            setting.value = str(value) # type: ignore
-            
+            s.value = str(v) # type: ignore
     db.commit()
     return {"status": "saved"}
 
 @app.post("/api/plugins/upload")
-async def upload_plugin(file: UploadFile = File(...)):
-    """
-    Uploads a .py file to the app/plugins/ directory.
-    """
-    if not file.filename.endswith(".py"): # type: ignore
-        raise HTTPException(status_code=400, detail="Only .py files allowed")
+async def upload_plugin(file: UploadFile = File(...), force: bool = False):
+    clean_name = os.path.basename(file.filename) # type: ignore
+    if not clean_name.endswith(".py"): raise HTTPException(400, "Only .py allowed")
     
-    # Save to app/plugins/
-    # We assume the server is running from the root, so path is app/plugins/filename
-    file_path = os.path.join("app", "plugins", file.filename) # type: ignore
+    plugin_dir = manager.PLUGIN_DIR
+    if not os.path.exists(plugin_dir): os.makedirs(plugin_dir, exist_ok=True)
+    
+    temp_path = os.path.join(plugin_dir, f"temp_{clean_name}")
+    target_path = os.path.join(plugin_dir, clean_name)
     
     try:
-        with open(file_path, "wb+") as f:
-            shutil.copyfileobj(file.file, f)
-    except Exception as e:
-        logger.error(f"Plugin upload failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Plugin upload failed: {e}")
+        with open(temp_path, "wb+") as f: shutil.copyfileobj(file.file, f)
+        info = manager.get_plugin_info_from_file(temp_path) # type: ignore
+        if not info:
+            if os.path.exists(temp_path): os.remove(temp_path)
+            raise HTTPException(400, "Invalid plugin")
+            
+        new_id, new_ver = info
+        existing = manager.get_plugin_instance(new_id)
+        if existing:
+            old_ver = getattr(existing, 'version', 0.0)
+            if new_ver <= old_ver and not force:
+                if os.path.exists(temp_path): os.remove(temp_path)
+                return {"status": "confirm", "message": f"Version {old_ver} exists. Replace with {new_ver}?"}
         
-    return {"status": "success", "filename": file.filename}
+        if os.path.exists(target_path): os.remove(target_path)
+        shutil.move(temp_path, target_path)
+        manager.load_plugins()
+        return {"status": "success", "id": new_id, "version": new_ver}
+    except Exception as e:
+        if os.path.exists(temp_path): os.remove(temp_path)
+        raise HTTPException(500, str(e))
 
 @app.post("/api/plugins/run")
 def run_plugin(payload: dict, db: Session = Depends(get_db)):
-    """
-    Executes a plugin to scrape metadata.
-    Payload: {"plugin_id": "fakku", "url": "https://..."}
-    """
     p_id = payload.get("plugin_id")
     url = payload.get("url")
-    
-    # 1. Load the plugin
     plugin = manager.get_plugin_instance(p_id) # type: ignore
-    if not plugin:
-        raise HTTPException(status_code=404, detail="Plugin not found")
+    if not plugin: raise HTTPException(404, "Plugin not found")
     
-    # 2. Load config from DB
-    saved_configs = db.query(database.PluginConfig).filter(database.PluginConfig.plugin_id == p_id).all()
-    config_map = {c.key: c.value for c in saved_configs}
+    saved = db.query(database.PluginConfig).filter(database.PluginConfig.plugin_id == p_id).all()
+    config_map = {c.key: c.value for c in saved}
+    return plugin.scrape(url, config_map)
+
+# --- OTHER HELPERS ---
+
+@app.get("/api/categories")
+def get_categories(db: Session = Depends(get_db)):
+    cats = db.query(database.Category).all()
+    return [{"id": c.id, "name": c.name, "count": len(c.galleries)} for c in cats]
+
+@app.post("/api/categories")
+def add_category(payload: dict, db: Session = Depends(get_db)):
+    name = payload.get("name").strip() # type: ignore
+    if not name: raise HTTPException(400, "Empty name")
+    if db.query(database.Category).filter(database.Category.name == name).first():
+        raise HTTPException(400, "Category exists")
+    db.add(database.Category(name=name))
+    db.commit()
+    return {"status": "created"}
+
+@app.delete("/api/categories/{cat_id}")
+def delete_category(cat_id: int, force: bool = False, db: Session = Depends(get_db)):
+    cat = db.query(database.Category).filter(database.Category.id == cat_id).first()
+    if not cat: raise HTTPException(404, "Not found")
+    if len(cat.galleries) > 0 and not force:
+        return {"status": "conflict", "message": f"Contains {len(cat.galleries)} items"}
+    for g in cat.galleries: g.category_id = None
+    db.delete(cat)
+    db.commit()
+    return {"status": "deleted"}
+
+@app.get("/api/autocomplete")
+def autocomplete(db: Session = Depends(get_db)):
+    artists = db.query(database.Gallery.artist).distinct().all()
+    series = db.query(database.Series.name).distinct().all()
+    return {
+        "artists": [a[0] for a in artists if a[0]],
+        "series": [s[0] for s in series if s[0]]
+    }
+
+@app.get("/api/settings")
+def get_settings_api(db: Session = Depends(get_db)):
+    s_list = db.query(database.Settings).all()
+    s_dict = {s.key: s.value for s in s_list}
+    if "default_direction" not in s_dict: s_dict["default_direction"] = "LTR" # type: ignore
+    if "show_uncategorized" not in s_dict: s_dict["show_uncategorized"] = "false" # type: ignore
+    return s_dict
+
+@app.post("/api/settings")
+def save_settings_api(payload: dict, db: Session = Depends(get_db)):
+    for k, v in payload.items():
+        s = db.query(database.Settings).filter(database.Settings.key == k).first()
+        if not s: db.add(database.Settings(key=k, value=str(v)))
+        else: s.value = str(v) # type: ignore
+    db.commit()
+    return {"status": "saved"}
+
+@app.get("/api/logs")
+def get_logs_api():
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "r") as f: 
+            lines = f.readlines()
+            return {"logs": "".join(lines[-100:])}
+    return {"logs": "No logs."}
+
+@app.delete("/api/logs")
+def clear_logs_api():
+    open(LOG_FILE, "w").close()
+    return {"status": "cleared"}
+
+@app.post("/api/upload")
+async def upload_gallery_api(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith(('.zip', '.cbz')): raise HTTPException(400, "Zip/CBZ only") # type: ignore
+    loc = os.path.join(INPUT_DIR, file.filename) # type: ignore
+    with open(loc, "wb+") as f: shutil.copyfileobj(file.file, f)
+    return {"filename": file.filename, "status": "success"}
+
+@app.get("/api/backup")
+def backup_db(db: Session = Depends(get_db)):
+    # Simple JSON export
+    data = {"categories": [], "series": [], "tags": [], "galleries": [], "settings": []}
+    for c in db.query(database.Category).all(): data["categories"].append({"id":c.id, "name":c.name})
+    for s in db.query(database.Series).all(): data["series"].append({"id":s.id, "name":s.name, "description":s.description})
+    for t in db.query(database.Tag).all(): data["tags"].append({"id":t.id, "name":t.name})
+    for st in db.query(database.Settings).all(): data["settings"].append({"key":st.key, "value":st.value})
+    for g in db.query(database.Gallery).all():
+        data["galleries"].append({
+            "id": g.id, "filename": g.filename, "path": g.path, "title": g.title, "artist": g.artist,
+            "status": g.status, "pages_read": g.pages_read, "pages_total": g.pages_total,
+            "reading_direction": g.reading_direction, "series_id": g.series_id, "category_id": g.category_id,
+            "description": g.description, "tag_names": [t.name for t in g.tags]
+        })
+    return data
+
+@app.post("/api/restore")
+async def restore_db(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    content = await file.read()
+    data = json.loads(content)
     
-    try:
-        # 3. Run the scrape method
-        logger.info(f"Running plugin {p_id} on {url}")
-        result = plugin.scrape(url, config_map) # type: ignore
-        return result
-    except Exception as e:
-        logger.error(f"Plugin Error: {e}")
-        # Send the specific error message back to the frontend
-        raise HTTPException(status_code=500, detail=str(e))
+    # Wipe
+    db.query(database.gallery_tags).delete()
+    db.query(database.Gallery).delete()
+    db.query(database.Series).delete()
+    db.query(database.Category).delete()
+    db.query(database.Tag).delete()
+    db.query(database.Settings).delete()
+    db.commit()
     
-@app.get("/api/download/{gallery_id}")
-def download_gallery(gallery_id: int, db: Session = Depends(get_db)):
-    """
-    Downloads the raw ZIP/CBZ file for a gallery.
-    """
-    gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
-    if not gallery:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-        
-    # Verify the file actually exists on disk
-    if not os.path.exists(gallery.path): # type: ignore
-        raise HTTPException(status_code=404, detail="File not found on server disk")
-        
-    # Return the file as an attachment (forces download prompt)
-    return FileResponse(
-        path=gallery.path,  # type: ignore
-        filename=os.path.basename(gallery.path), # type: ignore
-        media_type='application/octet-stream'
-    )
+    # Restore (Simplified for brevity - assumes valid JSON)
+    for c in data.get("categories", []): db.add(database.Category(id=c["id"], name=c["name"]))
+    for s in data.get("series", []): db.add(database.Series(id=s["id"], name=s["name"], description=s.get("description")))
+    tag_map = {}
+    for t in data.get("tags", []): 
+        new_tag = database.Tag(id=t["id"], name=t["name"])
+        db.add(new_tag)
+        tag_map[t["name"]] = new_tag
+    for st in data.get("settings", []): db.add(database.Settings(key=st["key"], value=st["value"]))
+    db.commit()
+    
+    for g in data.get("galleries", []):
+        gal = database.Gallery(
+            id=g["id"], filename=g["filename"], path=g["path"], title=g["title"], artist=g["artist"],
+            status=g["status"], pages_read=g.get("pages_read",0), pages_total=g.get("pages_total",0),
+            reading_direction=g.get("reading_direction","LTR"), series_id=g["series_id"], category_id=g["category_id"],
+            description=g.get("description")
+        )
+        for tn in g.get("tag_names", []):
+            if tn in tag_map: gal.tags.append(tag_map[tn])
+        db.add(gal)
+    db.commit()
+    return {"status": "restored"}
