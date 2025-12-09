@@ -93,6 +93,7 @@
     <div id="context-menu" style="display:none; position:fixed; z-index:1000; background:#333; border:1px solid #555; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
         <div class="ctx-item" id="ctx-read">Read</div>
         <div class="ctx-item" id="ctx-edit" onclick="openEditModal()">Edit Metadata</div>
+        <div class="ctx-item" id="ctx-mark" onclick="markAsReadCtx()">Mark as Read</div>
         <div class="ctx-item" id="ctx-download">Download</div>
     </div>
 
@@ -342,6 +343,25 @@
                 });
             }
             location.reload(); 
+        }
+
+        async function markAsReadCtx() {
+            if(!selectedItem) return;
+            
+            const isSeries = selectedItem.type === 'series';
+            const url = isSeries 
+                ? `/api/series/${selectedItem.id}/mark-read`
+                : `/api/gallery/${selectedItem.id}/mark-read`;
+                
+            const msg = isSeries
+                ? "Mark entire series as read?"
+                : "Mark gallery as read?";
+
+            if(confirm(msg)) {
+                const res = await fetch(url, { method: 'POST' });
+                if(res.ok) location.reload();
+                else alert("Error updating status");
+            }
         }
 
         // Init

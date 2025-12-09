@@ -617,3 +617,30 @@ async def restore_db(file: UploadFile = File(...), db: Session = Depends(get_db)
         db.add(gal)
     db.commit()
     return {"status": "restored"}
+
+@app.post("/api/gallery/{gallery_id}/mark-read")
+def mark_gallery_read(gallery_id: int, db: Session = Depends(get_db)):
+    g = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not g: raise HTTPException(404, "Gallery not found")
+    
+    # Set to completed state
+    g.status = "Completed" # type: ignore
+    if g.pages_total: # type: ignore
+        g.pages_read = g.pages_total
+        
+    db.commit()
+    return {"status": "success"}
+
+@app.post("/api/series/{series_id}/mark-read")
+def mark_series_read(series_id: int, db: Session = Depends(get_db)):
+    s = db.query(database.Series).filter(database.Series.id == series_id).first()
+    if not s: raise HTTPException(404, "Series not found")
+    
+    # Update ALL galleries in series
+    for g in s.galleries:
+        g.status = "Completed"
+        if g.pages_total:
+            g.pages_read = g.pages_total
+            
+    db.commit()
+    return {"status": "success"}
