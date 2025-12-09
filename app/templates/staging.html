@@ -1,123 +1,150 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div style="display: flex; height: calc(100vh - 80px); gap: 20px;">
+<div style="display: flex; height: calc(100vh - 80px); border: 1px solid #444; border-radius: 4px; overflow: hidden; background: #1e1e1e;">
     
-    <div style="width: 300px; display: flex; flex-direction: column; background: #2d2d2d; border-right: 1px solid #444;">
-        <div style="padding: 10px; background: #222; border-bottom: 1px solid #444; font-weight: bold;">
-            Staging Area
-            <button onclick="scanFiles()" class="btn-small" style="float:right;">Scan</button>
+    <div style="width: 280px; display: flex; flex-direction: column; background: #252525; border-right: 1px solid #444;">
+        <div style="padding: 12px 15px; background: #1a1a1a; border-bottom: 1px solid #333; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+            <span>Staging Area</span>
+            <button onclick="scanFiles()" class="btn-small" style="font-size: 0.8rem;">Rescan</button>
         </div>
         <div id="file-list" style="flex: 1; overflow-y: auto;">
             <div style="padding: 20px; color: #888; text-align: center;">Loading...</div>
         </div>
     </div>
 
-    <div style="flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding-right: 20px;">
+    <div id="editor-area" style="flex: 1; display: none; flex-direction: column; position: relative;">
         
-        <div style="display: flex; gap: 20px; margin-bottom: 20px; background: #222; padding: 20px; border-radius: 8px;">
-            <div style="width: 200px; height: 280px; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid #444;">
-                <img id="preview-img" style="max-width: 100%; max-height: 100%; display: none;">
-                <span id="preview-placeholder" style="color: #555;">Select a file</span>
-            </div>
-            <div style="flex: 1;">
-                <h2 id="preview-filename" style="margin-top: 0; color: var(--accent); word-break: break-all;">No File Selected</h2>
-                <p style="color: #888; font-size: 0.9rem;">
-                    Select a file from the list to begin importing. You can manually enter metadata or use a plugin to fetch it.
-                </p>
-                <div id="file-path" style="font-family: monospace; color: #666; font-size: 0.8rem; margin-top: 10px;"></div>
-            </div>
-        </div>
-
-        <div id="import-form-container" style="display: none;">
-            <form id="import-form" onsubmit="submitImport(event)">
-                <input type="hidden" id="inp_id">
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
-                    <div class="form-group">
-                        <label>Title</label>
-                        <input type="text" id="inp_title" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Artist</label>
-                        <input type="text" id="inp_artist" required autocomplete="off">
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
-                    <div class="form-group">
-                        <label>Series</label>
-                        <input type="text" id="inp_series" autocomplete="off" placeholder="(Optional)">
-                    </div>
-                    <div class="form-group">
-                        <label>Category</label>
-                        <select id="inp_category">
-                            <option value="">(None)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group" style="margin-bottom: 15px;">
-                    <label>Tags (comma separated)</label>
-                    <input type="text" id="inp_tags">
-                </div>
-
-                <div class="form-group" style="margin-bottom: 15px;">
-                    <label>Description</label>
-                    <textarea id="inp_desc" rows="3"></textarea>
+        <div style="flex: 1; overflow-y: auto; padding: 20px; display: flex; gap: 30px;">
+            
+            <div style="width: 300px; flex-shrink: 0; position: sticky; top: 0; height: fit-content;">
+                <div style="background: #000; border: 1px solid #444; border-radius: 8px; overflow: hidden; aspect-ratio: 2/3; display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
+                    <img id="preview-img" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                 </div>
                 
-                <div class="form-group" style="margin-bottom: 20px;">
-                     <label>Reading Direction</label>
-                     <select id="inp_direction">
-                         <option value="LTR">Left to Right (Comic)</option>
-                         <option value="RTL">Right to Left (Manga)</option>
-                     </select>
+                <div style="background: #252525; padding: 15px; border-radius: 6px; border: 1px solid #444;">
+                    <div style="font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px;">Filename</div>
+                    <div id="preview-filename" style="word-break: break-all; font-family: monospace; font-size: 0.9rem; color: #ddd; line-height: 1.4;">-</div>
                 </div>
+            </div>
 
-                <div style="background: #252525; padding: 15px; border-radius: 5px; border: 1px solid #444; margin-bottom: 20px;">
-                    <h4 style="margin-top: 0; color: #aaa;">Metadata Source</h4>
-                    <div style="display: flex; gap: 10px; align-items: flex-end;">
-                        <div class="form-group" style="flex: 1;">
-                            <label>Source / Plugin</label>
-                            <select id="plugin_source">
-                                <option value="" disabled selected>Select a plugin...</option>
+            <div style="flex: 1; max-width: 800px;">
+                
+                <form id="import-form" onsubmit="submitImport(event)">
+                    <input type="hidden" id="inp_id">
+                    <button type="submit" style="display: none;"></button>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label class="form-label">Title</label>
+                        <input type="text" id="inp_title" required class="form-input" style="font-size: 1.1rem; font-weight: bold;">
+                    </div>
+
+                    <div class="form-grid">
+                        <div>
+                            <label class="form-label">Artist</label>
+                            <input type="text" id="inp_artist" required autocomplete="off" class="form-input">
+                        </div>
+                        <div>
+                            <label class="form-label">Series <span style="color:#666; font-weight:normal;">(Optional)</span></label>
+                            <input type="text" id="inp_series" autocomplete="off" class="form-input">
+                        </div>
+                    </div>
+
+                    <div class="form-grid" style="margin-top: 15px;">
+                        <div>
+                            <label class="form-label">Category</label>
+                            <select id="inp_category" class="form-input">
+                                <option value="">(None)</option>
                             </select>
                         </div>
-                        <div class="form-group" style="flex: 2;">
-                            <label>URL / ID</label>
-                            <input type="text" id="plugin_url" placeholder="https://...">
+                        <div>
+                             <label class="form-label">Reading Direction</label>
+                             <select id="inp_direction" class="form-input">
+                                 <option value="LTR">Left to Right (Comic)</option>
+                                 <option value="RTL">Right to Left (Manga)</option>
+                             </select>
                         </div>
-                        <button type="button" onclick="runPlugin()" class="btn-small" style="margin-bottom: 2px;">Fetch</button>
                     </div>
-                </div>
 
-                <button type="submit" class="btn-save" style="width: 100%; padding: 12px; font-size: 1.1rem;">Save & Import</button>
-            </form>
+                    <div style="margin-top: 15px;">
+                        <label class="form-label">Tags</label>
+                        <input type="text" id="inp_tags" placeholder="Comma, separated, tags" class="form-input">
+                    </div>
+
+                    <div style="margin-top: 15px; margin-bottom: 20px;">
+                        <label class="form-label">Description</label>
+                        <textarea id="inp_desc" rows="3" class="form-input" style="font-size: 0.9rem;"></textarea>
+                    </div>
+
+                    <div style="background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 10px; margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
+                        <div style="font-weight: bold; color: var(--accent); white-space: nowrap;">⚡ Metadata Source:</div>
+                        <select id="plugin_source" style="flex: 1; min-width: 120px;">
+                            <option value="" disabled selected>Select Plugin...</option>
+                        </select>
+                        <input type="text" id="plugin_url" placeholder="Paste URL or ID..." style="flex: 2;">
+                        <button type="button" onclick="runPlugin()" class="btn-small" style="background: #34495e;">Fetch</button>
+                    </div>
+
+                </form>
+            </div>
         </div>
 
+        <div style="padding: 15px 20px; background: #252525; border-top: 1px solid #444; text-align: right; box-shadow: 0 -4px 10px rgba(0,0,0,0.2);">
+            <button onclick="document.getElementById('import-form').requestSubmit()" class="btn-save" style="padding: 10px 40px; font-size: 1.1rem;">
+                Save & Import
+            </button>
+        </div>
+
+    </div>
+    
+    <div id="empty-state" style="flex: 1; display: flex; align-items: center; justify-content: center; color: #666; flex-direction: column;">
+        <div style="font-size: 3rem; margin-bottom: 10px;">📂</div>
+        <div>Select a file to begin editing</div>
     </div>
 </div>
 
 <style>
-    .file-item {
+    /* UTILITIES */
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+    .form-label {
+        display: block; 
+        color: #aaa; 
+        margin-bottom: 5px; 
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    .form-input {
+        width: 100%; 
         padding: 10px;
+        background: #111; 
+        border: 1px solid #444; 
+        color: white; 
+        border-radius: 4px;
+        transition: border-color 0.2s;
+    }
+    .form-input:focus {
+        border-color: var(--accent);
+        outline: none;
+    }
+
+    /* FILE LIST ITEMS */
+    .file-item {
+        padding: 12px 15px;
         border-bottom: 1px solid #333;
         cursor: pointer;
         font-size: 0.9rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        transition: background 0.1s;
     }
     .file-item:hover { background: #333; }
-    .file-item.active { background: var(--accent); color: white; }
+    .file-item.active { background: var(--accent); color: white; border-bottom-color: var(--accent); }
     
-    .form-group label { display: block; color: #aaa; margin-bottom: 5px; font-size: 0.9rem; }
-    
-    input[type="text"], textarea, select {
-        width: 100%; padding: 8px;
-        background: #111; border: 1px solid #444; color: white; border-radius: 4px;
-    }
     textarea { resize: vertical; }
 </style>
 
@@ -152,55 +179,50 @@
             div.className = 'file-item';
             div.innerText = f.filename;
             div.onclick = () => selectFile(f.id);
-            div.dataset.id = f.id; // Store ID for active highlighting
+            div.dataset.id = f.id; 
             list.appendChild(div);
         });
     }
 
     async function selectFile(id) {
-        // Highlight logic
         document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
         const activeEl = document.querySelector(`.file-item[data-id="${id}"]`);
         if(activeEl) activeEl.classList.add('active');
 
-        // Find data
         const file = stagedFiles.find(f => f.id === id);
         if (!file) return;
 
-        // UI Updates
-        document.getElementById('preview-filename').innerText = file.filename;
-        document.getElementById('file-path').innerText = file.path;
-        document.getElementById('preview-placeholder').style.display = 'none';
+        document.getElementById('empty-state').style.display = 'none';
+        document.getElementById('editor-area').style.display = 'flex';
         
+        document.getElementById('preview-filename').innerText = file.filename;
         const img = document.getElementById('preview-img');
         img.src = `/api/staged/${id}/cover`;
-        img.style.display = 'block';
 
-        // Show Form
-        document.getElementById('import-form-container').style.display = 'block';
         document.getElementById('inp_id').value = id;
         
-        // Auto-fill logic (Regex parse)
-        // Try to guess Artist/Title from filename like "[Artist] Title (Event)"
+        // Auto-fill
         let title = file.filename;
         let artist = "";
-        
-        // Simple regex for [Artist] Title
         const match = title.match(/^\[(.*?)\]\s*(.*?)(\.zip|\.cbz)?$/);
         if (match) {
             artist = match[1];
             title = match[2];
-            // Remove typical trailing tags like (C100)
             title = title.replace(/\s*\(.*?\)\s*/g, '').trim();
         } else {
             title = title.replace(/\.(zip|cbz)$/i, '');
         }
 
-        document.getElementById('inp_title').value = title;
+        const titleInput = document.getElementById('inp_title');
+        titleInput.value = title;
         document.getElementById('inp_artist').value = artist;
         document.getElementById('inp_series').value = "";
         document.getElementById('inp_tags').value = "";
         document.getElementById('inp_desc').value = "";
+        document.getElementById('plugin_url').value = ""; 
+
+        titleInput.focus();
+        titleInput.select();
     }
 
     // --- 2. GHOST TEXT AUTOCOMPLETE ---
@@ -220,8 +242,6 @@
         const input = document.getElementById(inputId);
         
         input.addEventListener('keydown', function(e) {
-            // If user hits Backspace, temporarily disable auto-suggest
-            // so they can actually delete text without it fighting back
             if (e.key === 'Backspace') {
                 input.dataset.backspacing = "true";
             } else {
@@ -231,42 +251,32 @@
 
         input.addEventListener('input', function(e) {
             const val = input.value;
-            
-            // Don't suggest if empty or backspacing
             if (!val || input.dataset.backspacing === "true") return;
-
+            
             // Find match (Case Insensitive)
-            // We escape special regex chars just in case
             const match = dataSource.find(item => item.toLowerCase().startsWith(val.toLowerCase()));
             
             if (match) {
-                // If we found "John Smith" and user typed "jo", 
-                // we want to preserve "jo" case (or not? Standard is to preserve case of match usually)
-                // Let's use the match's case to be clean.
-                
                 const currentLen = val.length;
                 
-                // Set the value to the FULL match
-                input.value = match;
+                // FIX: Instead of replacing the input with the match (which forces casing),
+                // we append the missing suffix from the match to the user's existing input.
+                // This preserves user's capitalization (e.g. "Kar" + "ory" -> "Karory")
+                const suffix = match.slice(currentLen);
+                input.value = val + suffix;
                 
-                // Highlight the part the user HAS NOT typed yet
-                // setSelectionRange(start, end)
-                input.setSelectionRange(currentLen, match.length);
+                input.setSelectionRange(currentLen, input.value.length);
             }
         });
     }
 
-    // --- 3. SUBMISSION & PLUGINS ---
+    // --- 3. SUBMISSION ---
+
     async function submitImport(e) {
         e.preventDefault();
         const id = document.getElementById('inp_id').value;
-        
-        // Grab values for autocomplete update
         const rawArtist = document.getElementById('inp_artist').value;
         const rawSeries = document.getElementById('inp_series').value;
-
-        // 1. Find the index of the current file so we know what to select next
-        // (Note: id from DOM is string, f.id is int, so use ==)
         const currentIndex = stagedFiles.findIndex(f => f.id == id);
 
         const payload = {
@@ -279,7 +289,7 @@
             direction: document.getElementById('inp_direction').value
         };
 
-        const btn = e.target.querySelector('.btn-save');
+        const btn = document.querySelector('.btn-save');
         const oldText = btn.innerText;
         btn.innerText = "Importing...";
         btn.disabled = true;
@@ -292,32 +302,20 @@
             });
             
             if (res.ok) {
-                // 2. Remove imported file from list
                 stagedFiles = stagedFiles.filter(f => f.id != id);
                 renderList();
 
-                // 3. Update Autocomplete
                 if (rawArtist && !knownArtists.includes(rawArtist)) knownArtists.push(rawArtist);
                 if (rawSeries && !knownSeries.includes(rawSeries)) knownSeries.push(rawSeries);
 
-                // 4. Auto-select the next file
                 if (stagedFiles.length > 0) {
-                    // Try to grab the file that moved into the current slot
                     let nextIndex = currentIndex;
-                    
-                    // If we were at the end of the list, step back one
-                    if (nextIndex >= stagedFiles.length) {
-                        nextIndex = stagedFiles.length - 1;
-                    }
-                    
-                    // Select the next file immediately
+                    if (nextIndex >= stagedFiles.length) nextIndex = stagedFiles.length - 1;
                     selectFile(stagedFiles[nextIndex].id);
                 } else {
-                    // List is empty, clear the UI
-                    document.getElementById('import-form-container').style.display = 'none';
-                    document.getElementById('preview-img').style.display = 'none';
-                    document.getElementById('preview-placeholder').style.display = 'block';
-                    document.getElementById('preview-filename').innerText = "All files imported!";
+                    document.getElementById('editor-area').style.display = 'none';
+                    document.getElementById('empty-state').style.display = 'flex';
+                    document.getElementById('empty-state').innerHTML = '<div>All files imported!</div>';
                 }
 
             } else {
@@ -348,7 +346,7 @@
             const res = await fetch('/api/plugins');
             const plugins = await res.json();
             const select = document.getElementById('plugin_source');
-            select.innerHTML = '<option value="" disabled selected>Select a plugin...</option>';
+            select.innerHTML = '<option value="" disabled selected>Select Plugin...</option>';
             
             if (plugins.length === 0) {
                 const opt = document.createElement('option');
@@ -363,7 +361,7 @@
                 opt.innerText = p.name;
                 select.appendChild(opt);
             });
-        } catch (e) { console.error("Error loading plugins:", e); }
+        } catch (e) { console.error(e); }
     }
 
     async function runPlugin() {
@@ -374,9 +372,8 @@
 
         if (!source || !url) { alert("Select source & enter URL"); return; }
 
-        btn.innerText = "Fetching...";
+        btn.innerText = "...";
         btn.disabled = true;
-        btn.style.backgroundColor = "#555";
 
         try {
             const res = await fetch('/api/plugins/run', {
@@ -393,23 +390,21 @@
                 if(data.tags && Array.isArray(data.tags)) document.getElementById('inp_tags').value = data.tags.join(', ');
                 
                 btn.style.backgroundColor = "#2ecc71";
-                btn.innerText = "Found!";
+                btn.innerText = "✓";
                 setTimeout(() => { 
                     btn.innerText = originalText; 
-                    btn.style.backgroundColor = "var(--accent)";
+                    btn.style.backgroundColor = "#34495e";
                     btn.disabled = false;
-                }, 2000);
+                }, 1500);
             } else {
                 alert("Plugin Error");
                 btn.innerText = originalText;
                 btn.disabled = false;
-                btn.style.backgroundColor = "var(--accent)";
             }
         } catch (e) {
-            alert("System Error: " + e);
+            alert("Error: " + e);
             btn.innerText = originalText;
             btn.disabled = false;
-            btn.style.backgroundColor = "var(--accent)";
         }
     }
     
@@ -421,6 +416,16 @@
                 if (event.key === 'Enter') {
                     event.preventDefault(); 
                     runPlugin(); 
+                }
+            });
+        }
+
+        const descInput = document.getElementById('inp_desc');
+        if (descInput) {
+            descInput.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault(); 
+                    document.getElementById('import-form').requestSubmit(); 
                 }
             });
         }
