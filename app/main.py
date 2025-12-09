@@ -67,21 +67,17 @@ def get_series_cover(series):
     if not series.galleries:
         return ""
         
-    # Sort galleries to ensure deterministic order
     sorted_gals = sorted(series.galleries, key=lambda x: (x.sort_order, x.id))
     
-    # CASE A: User selected "Currently Reading"
     if series.thumbnail_url == "__reading__":
         reading_gal = next((g for g in sorted_gals if g.status == "Reading"), None)
         if reading_gal:
             return f"/thumbnails/{reading_gal.id}.jpg"
         return f"/thumbnails/{sorted_gals[0].id}.jpg"
 
-    # CASE B: Specific static URL chosen
     if series.thumbnail_url:
         return series.thumbnail_url
         
-    # CASE C: Default (First gallery)
     return f"/thumbnails/{sorted_gals[0].id}.jpg"
 
 def build_search_string(title, artist, extra_list=None):
@@ -97,6 +93,26 @@ async def startup_event():
     os.makedirs(LIBRARY_DIR, exist_ok=True)
     os.makedirs(THUMBNAIL_DIR, exist_ok=True)
     database.init_db()
+    
+    # --- CLEANUP: REMOVE GHOST TAGS ---
+    # This runs once on startup to fix your database
+    db = database.SessionLocal()
+    try:
+        bad_tags = db.query(database.Tag).filter(database.Tag.name == "").all()
+        if bad_tags:
+            logger.info(f"Cleanup: Found {len(bad_tags)} empty tags. Removing them...")
+            for t in bad_tags:
+                # Clear relationships first to be safe
+                t.galleries = []
+                t.series = []
+                db.delete(t)
+            db.commit()
+            logger.info("Cleanup: Empty tags removed.")
+    except Exception as e:
+        logger.error(f"Cleanup failed: {e}")
+    finally:
+        db.close()
+        
     logger.info("Server Started Successfully")
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -138,11 +154,8 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         total_count = len(s.galleries)
         read_count = sum(1 for g in s.galleries if g.status == "Completed")
         
-        # FIX: Check if ANY gallery is "Reading" or "Completed"
-        # If even one gallery is not "New", the series is no longer "New"
         any_progress = any(g.status != "New" for g in s.galleries)
         
-        # ... (Tag logic remains the same) ...
         series_tags = [t.name for t in s.tags]
         child_tags = []
         for g in s.galleries:
@@ -155,7 +168,6 @@ def read_root(request: Request, db: Session = Depends(get_db)):
         else:
             display_tags = sorted(list(set(child_tags)))
 
-        # Build search blob
         child_titles = [g.title for g in s.galleries]
         child_artists = [g.artist for g in s.galleries]
         search_blob = build_search_string(s.name, s.artist, child_titles + child_artists + all_search_tags)
@@ -170,14 +182,13 @@ def read_root(request: Request, db: Session = Depends(get_db)):
             "thumb": thumb,
             "count": total_count,
             "read_count": read_count,
-            "is_new": not any_progress, # <--- SEND THIS FLAG
+            "is_new": not any_progress,
             "series": s.name,
             "tags": display_tags,
             "description": s.description if s.description else "", # type: ignore
             "search_data": search_blob
         })
 
-    # Sort Alphabetically
     items.sort(key=lambda x: x['title'].lower())
         
     return templates.TemplateResponse("library.html", {
@@ -193,12 +204,22 @@ def view_series_page(series_id: int, request: Request, db: Session = Depends(get
         
     galleries = sorted(series.galleries, key=lambda x: (x.sort_order, x.id))
     cover_url = get_series_cover(series)
+
+    if series.tags:
+        display_tags = [t.name for t in series.tags]
+    else:
+        child_tags = []
+        for g in series.galleries:
+            for t in g.tags:
+                child_tags.append(t.name)
+        display_tags = sorted(list(set(child_tags)))
     
     return templates.TemplateResponse("series.html", {
         "request": request, 
         "series": series, 
         "galleries": galleries,
-        "cover_url": cover_url
+        "cover_url": cover_url,
+        "display_tags": display_tags
     })
 
 @app.get("/reader/{gallery_id}", response_class=HTMLResponse)
@@ -207,7 +228,6 @@ def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
     
-    # Auto-update status to Reading if New
     if gallery.status == "New": # type: ignore
         gallery.status = "Reading" # type: ignore
         db.commit()
@@ -263,13 +283,15 @@ def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
     if not g: raise HTTPException(404, "Not found")
     
     g.pages_read = page # type: ignore
+    
+    # Progress Logic
     if g.pages_total and page >= g.pages_total: # type: ignore
         g.status = "Completed" # type: ignore
     elif page > 1:
         g.status = "Reading" # type: ignore
     else:
         g.status = "New" # type: ignore
-
+        
     db.commit()
     return {"status": "updated"}
 
@@ -280,13 +302,11 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
     if not gallery: raise HTTPException(404, "Gallery not found")
     
-    # 1. Update Basic Fields
     gallery.title = request.title # type: ignore
     gallery.artist = request.artist # type: ignore
     gallery.description = request.description # type: ignore
     if request.direction: gallery.reading_direction = request.direction # type: ignore
     
-    # 2. Handle Series
     if request.series:
         s = db.query(database.Series).filter(database.Series.name == request.series).first()
         if not s:
@@ -297,7 +317,6 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.series_id = None # type: ignore
 
-    # 3. Handle Category
     if request.category:
         c = db.query(database.Category).filter(database.Category.name == request.category).first()
         if not c:
@@ -308,9 +327,12 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.category_id = None # type: ignore
 
-    # 4. Handle Tags
+    # Handle Tags
     gallery.tags.clear()
     for t_name in request.tags:
+        t_name = t_name.strip()
+        if not t_name: continue # <--- FIX: Prevent empty tags
+        
         t = db.query(database.Tag).filter(database.Tag.name == t_name).first()
         if not t:
             t = database.Tag(name=t_name)
@@ -330,7 +352,6 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
     if "artist" in payload: s.artist = payload["artist"]
     if "description" in payload: s.description = payload["description"]
     
-    # Update Category
     if "category" in payload:
         c_name = payload["category"]
         if c_name:
@@ -342,24 +363,23 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
         else:
             s.category = None
 
-    # Update Tags
     if "tags" in payload:
         s.tags.clear()
         for t_name in payload["tags"]:
             t_name = t_name.strip()
-            if not t_name: continue
+            if not t_name: continue # <--- FIX: Prevent empty tags
+            
             t = db.query(database.Tag).filter(database.Tag.name == t_name).first()
             if not t:
                 t = database.Tag(name=t_name)
                 db.add(t)
             s.tags.append(t)
 
-    # Update Sort Order
     if "order" in payload:
         for idx, g_id in enumerate(payload["order"]):
             g = db.query(database.Gallery).filter(database.Gallery.id == g_id).first()
             if g and g.series_id == s.id: # type: ignore
-                g.sort_order = idx + 1 # type: ignore 
+                g.sort_order = idx + 1  # type: ignore
                 
     db.commit()
     return {"status": "success"}
@@ -409,7 +429,7 @@ def get_plugins(db: Session = Depends(get_db)):
         results.append({
             "id": plugin.id, 
             "name": plugin.name, 
-            "version": getattr(plugin, 'version', 1.0),
+            "version": getattr(plugin, 'version', 1.0), 
             "fields": fields
         })
     return results
@@ -429,64 +449,37 @@ def save_plugin_config(payload: dict, db: Session = Depends(get_db)):
 
 @app.post("/api/plugins/upload")
 async def upload_plugin(file: UploadFile = File(...), force: bool = False):
-    """
-    Uploads a plugin safely.
-    1. Uses manager.PLUGIN_DIR to find the exact folder (Fixes [Errno 2]).
-    2. Checks version numbers to prevent accidental downgrades.
-    """
     clean_name = os.path.basename(file.filename) # type: ignore
-    if not clean_name.endswith(".py"): 
-        raise HTTPException(400, "Only .py files allowed")
+    if not clean_name.endswith(".py"): raise HTTPException(400, "Only .py allowed")
     
-    # 1. FIX: Use the absolute path from the manager
     plugin_dir = manager.PLUGIN_DIR
-    
-    # 2. FIX: Force create the directory if it's missing
-    if not os.path.exists(plugin_dir): 
-        os.makedirs(plugin_dir, exist_ok=True)
+    if not os.path.exists(plugin_dir): os.makedirs(plugin_dir, exist_ok=True)
     
     temp_path = os.path.join(plugin_dir, f"temp_{clean_name}")
     target_path = os.path.join(plugin_dir, clean_name)
     
     try:
-        # Save to temp file
-        with open(temp_path, "wb+") as f: 
-            shutil.copyfileobj(file.file, f)
-            
-        # Inspect the new file
+        with open(temp_path, "wb+") as f: shutil.copyfileobj(file.file, f)
         info = manager.get_plugin_info_from_file(temp_path)
         if not info:
             if os.path.exists(temp_path): os.remove(temp_path)
-            raise HTTPException(400, "Invalid plugin file")
+            raise HTTPException(400, "Invalid plugin")
             
         new_id, new_ver = info
-        
-        # Check against existing installed plugin
         existing = manager.get_plugin_instance(new_id) # type: ignore
         if existing:
             old_ver = getattr(existing, 'version', 0.0)
-            # If new version is older/same and NOT forced -> Ask for confirmation
             if new_ver <= old_ver and not force: # type: ignore
                 if os.path.exists(temp_path): os.remove(temp_path)
-                return {
-                    "status": "confirm", 
-                    "message": f"Version {old_ver} is already installed. Replace with version {new_ver}?"
-                }
+                return {"status": "confirm", "message": f"Version {old_ver} is already installed. Replace with {new_ver}?"}
         
-        # Move temp file to final destination
         if os.path.exists(target_path): os.remove(target_path)
         shutil.move(temp_path, target_path)
-        
-        # Reload plugins immediately
         manager.load_plugins()
-        
         return {"status": "success", "id": new_id, "version": new_ver}
-        
     except Exception as e:
         if os.path.exists(temp_path): os.remove(temp_path)
-        # Log the exact path that failed to help debugging
-        logger.error(f"Plugin upload failed at {temp_path}: {e}")
-        raise HTTPException(500, detail=str(e))
+        raise HTTPException(500, str(e))
 
 @app.post("/api/plugins/run")
 def run_plugin(payload: dict, db: Session = Depends(get_db)):
@@ -575,7 +568,6 @@ async def upload_gallery_api(file: UploadFile = File(...)):
 
 @app.get("/api/backup")
 def backup_db(db: Session = Depends(get_db)):
-    # Simple JSON export
     data = {"categories": [], "series": [], "tags": [], "galleries": [], "settings": []}
     for c in db.query(database.Category).all(): data["categories"].append({"id":c.id, "name":c.name})
     for s in db.query(database.Series).all(): data["series"].append({"id":s.id, "name":s.name, "description":s.description})
@@ -595,7 +587,6 @@ async def restore_db(file: UploadFile = File(...), db: Session = Depends(get_db)
     content = await file.read()
     data = json.loads(content)
     
-    # Wipe
     db.query(database.gallery_tags).delete()
     db.query(database.Gallery).delete()
     db.query(database.Series).delete()
@@ -604,7 +595,6 @@ async def restore_db(file: UploadFile = File(...), db: Session = Depends(get_db)
     db.query(database.Settings).delete()
     db.commit()
     
-    # Restore (Simplified for brevity - assumes valid JSON)
     for c in data.get("categories", []): db.add(database.Category(id=c["id"], name=c["name"]))
     for s in data.get("series", []): db.add(database.Series(id=s["id"], name=s["name"], description=s.get("description")))
     tag_map = {}
