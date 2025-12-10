@@ -20,6 +20,10 @@
                 <div class="panel-body">
                     <form onsubmit="saveSettings(event)">
                         <div class="form-group">
+                            <label>Server Name</label>
+                            <input type="text" id="set_server_name" placeholder="Manga Server">
+                        </div>
+                        <div class="form-group">
                             <label>Default Reading Direction</label>
                             <select id="set_direction">
                                 <option value="LTR">Left to Right (Comic)</option>
@@ -32,25 +36,8 @@
                             <label for="set_show_uncategorized" style="margin: 0; cursor: pointer;">Show "Uncategorized" Filter</label>
                         </div>
 
-                        <button type="submit" class="btn-save">Save Globals</button>
+                        <button type="submit" class="btn-save" style="margin-top: 10px;">Save Globals</button>
                     </form>
-                </div>
-            </div>
-
-            <div class="card panel">
-                <div class="panel-header">
-                    <h3>Categories</h3>
-                </div>
-                <div class="panel-body">
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <input type="text" id="new_cat_name" placeholder="New Category Name" 
-                               style="flex:1; padding: 8px;" onkeypress="handleEnter(event)">
-                        <button onclick="addCategory()" class="btn-small" style="background:var(--accent);">Add</button>
-                    </div>
-                    
-                    <div id="category-list" class="scroll-list" style="height: 150px;">
-                        <div style="padding:10px; color:#888;">Loading...</div>
-                    </div>
                 </div>
             </div>
 
@@ -75,7 +62,25 @@
         </div>
 
         <div class="settings-column">
-            <div class="card panel" style="height: 100%; display: flex; flex-direction: column;">
+            
+            <div class="card panel">
+                <div class="panel-header">
+                    <h3>Categories</h3>
+                </div>
+                <div class="panel-body">
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <input type="text" id="new_cat_name" placeholder="New Category Name" 
+                               style="flex:1; padding: 8px;" onkeypress="handleEnter(event)">
+                        <button onclick="addCategory()" class="btn-small" style="background:var(--accent);">Add</button>
+                    </div>
+                    
+                    <div id="category-list" class="scroll-list" style="max-height: 400px; overflow-y: auto;">
+                        <div style="padding:10px; color:#888;">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card panel">
                 <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <h3>Metadata Plugins</h3>
                     <div style="display: flex; gap: 5px;">
@@ -86,12 +91,12 @@
                     </div>
                 </div>
                 
-                <div class="panel-body" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                <div class="panel-body">
                     <p class="help-text" style="margin-bottom: 15px;">
                         Upload Python scripts to add new sources. Click a plugin to configure it.
                     </p>
                     
-                    <div id="plugin-config-list" class="scroll-list plugin-list" style="flex: 1; max-height: 500px;">
+                    <div id="plugin-config-list" class="scroll-list plugin-list" style="max-height: 400px; overflow-y: auto">
                         <div style="color:#888; padding: 10px;">Loading plugins...</div>
                     </div>
                 </div>
@@ -134,13 +139,18 @@
         .settings-grid { grid-template-columns: 1fr; }
     }
 
+    .settings-column {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
     /* CARD STYLES */
     .card.panel {
         background: #2d2d2d;
         border-radius: 8px;
         border: 1px solid #444;
         overflow: hidden;
-        margin-bottom: 20px;
     }
 
     .panel-header {
@@ -226,20 +236,25 @@
         const data = await res.json();
         if (data.default_direction) document.getElementById('set_direction').value = data.default_direction;
         if (data.show_uncategorized === "true") document.getElementById('set_show_uncategorized').checked = true;
+        if (data.server_name) document.getElementById('set_server_name').value = data.server_name;
     }
 
     async function saveSettings(e) {
         e.preventDefault();
         const payload = {
             default_direction: document.getElementById('set_direction').value,
-            show_uncategorized: document.getElementById('set_show_uncategorized').checked ? "true" : "false"
+            show_uncategorized: document.getElementById('set_show_uncategorized').checked ? "true" : "false",
+            server_name: document.getElementById('set_server_name').value
         };
         const res = await fetch('/api/settings', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
-        if (res.ok) alert("Settings Saved!");
+        if (res.ok) {
+            alert("Settings Saved!");
+            location.reload(); 
+        }
     }
 
     // --- CATEGORIES ---
@@ -288,7 +303,7 @@
         } else if (data.status === 'deleted') loadCategories();
     }
 
-    // --- PLUGINS (FIXED ACCORDION) ---
+    // --- PLUGINS ---
     async function loadPlugins() {
         try {
             const res = await fetch('/api/plugins');
@@ -305,18 +320,15 @@
                 const div = document.createElement('div');
                 div.className = 'plugin-item';
 
-                // Create Header DOM Element (NOT string)
                 const header = document.createElement('div');
                 header.className = 'plugin-header';
                 header.innerHTML = `<strong>${p.name}</strong> <span style="font-size:0.8rem; color:#888;">v${p.version || '1.0'}</span>`;
                 
-                // Attach Event Listener Directly
                 header.onclick = function() {
                     const body = div.querySelector('.plugin-body');
                     body.classList.toggle('open');
                 };
 
-                // Create Body String
                 let bodyHtml = `<div class="plugin-body">`;
                 if (p.fields.length === 0) {
                     bodyHtml += `<div style="font-style:italic; color:#666; margin-bottom:10px;">No configuration required.</div>`;
@@ -335,10 +347,8 @@
                 }
                 bodyHtml += `</div>`;
 
-                // Assemble
                 div.appendChild(header);
                 div.insertAdjacentHTML('beforeend', bodyHtml);
-                
                 container.appendChild(div);
             });
         } catch(e) { console.error(e); }
@@ -361,7 +371,6 @@
         const formData = new FormData();
         formData.append("file", input.files[0]);
         
-        // Add force flag
         let url = '/api/plugins/upload';
         if (force) url += '?force=true';
 
@@ -373,12 +382,8 @@
                 alert(`Plugin uploaded successfully (v${data.version})! Click OK to refresh.`);
                 location.reload();
             } else if (data.status === 'confirm') {
-                // ASK USER TO CONFIRM DOWNGRADE
-                if (confirm(data.message)) {
-                    uploadPluginFile(input, true); // Retry with force=true
-                } else {
-                    input.value = ''; // Cancel
-                }
+                if (confirm(data.message)) uploadPluginFile(input, true);
+                else input.value = '';
             } else {
                 alert("Upload failed: " + (data.detail || "Unknown error"));
             }
@@ -391,7 +396,6 @@
         const data = await res.json();
         const logBox = document.getElementById('log-output');
         
-        // Simple check to prevent jitter if logs haven't changed
         if (logBox.innerText !== data.logs) {
             logBox.innerText = data.logs;
             logBox.scrollTop = logBox.scrollHeight;
@@ -424,6 +428,6 @@
     loadCategories();
     loadPlugins();
     fetchLogs();
-    setInterval(fetchLogs, 5000); // Ensure this is active
+    setInterval(fetchLogs, 5000);
 </script>
 {% endblock %}

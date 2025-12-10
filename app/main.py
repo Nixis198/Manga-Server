@@ -93,6 +93,8 @@ async def startup_event():
     os.makedirs(LIBRARY_DIR, exist_ok=True)
     os.makedirs(THUMBNAIL_DIR, exist_ok=True)
     database.init_db()
+
+    update_template_globals()
     
     # --- CLEANUP: REMOVE GHOST TAGS ---
     # This runs once on startup to fix your database
@@ -118,6 +120,16 @@ async def startup_event():
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.mount("/thumbnails", StaticFiles(directory=THUMBNAIL_DIR), name="thumbnails")
 templates = Jinja2Templates(directory="app/templates")
+
+def update_template_globals():
+    """Refreshes the server_name global variable for all templates."""
+    db = database.SessionLocal()
+    try:
+        setting = db.query(database.Settings).filter(database.Settings.key == "server_name").first()
+        name = setting.value if setting else "Manga Server"
+        templates.env.globals["server_name"] = name
+    finally:
+        db.close()
 
 # --- API ENDPOINTS: PAGES ---
 
@@ -535,6 +547,7 @@ def get_settings_api(db: Session = Depends(get_db)):
     s_dict = {s.key: s.value for s in s_list}
     if "default_direction" not in s_dict: s_dict["default_direction"] = "LTR" # type: ignore
     if "show_uncategorized" not in s_dict: s_dict["show_uncategorized"] = "false" # type: ignore
+    if "server_name" not in s_dict: s_dict["server_name"] = "Manga Server" # type: ignore
     return s_dict
 
 @app.post("/api/settings")
@@ -544,6 +557,7 @@ def save_settings_api(payload: dict, db: Session = Depends(get_db)):
         if not s: db.add(database.Settings(key=k, value=str(v)))
         else: s.value = str(v) # type: ignore
     db.commit()
+    update_template_globals()
     return {"status": "saved"}
 
 @app.get("/api/logs")
