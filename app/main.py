@@ -3,6 +3,7 @@ import shutil
 import logging
 import zipfile
 import io
+import threading
 import time
 import json
 from datetime import datetime
@@ -25,9 +26,11 @@ INPUT_DIR = os.path.join(DATA_DIR, "input")
 LIBRARY_DIR = os.path.join(DATA_DIR, "library")
 THUMBNAIL_DIR = os.path.join(DATA_DIR, "thumbnails")
 LOG_FILE = os.path.join(DATA_DIR, "logs", "server.log")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 
 # Ensure Log Directory Exists immediately
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+os.makedirs(BACKUP_DIR, exist_ok=True)
 
 # --- SETUP LOGGING ---
 logging.basicConfig(
@@ -87,6 +90,59 @@ def build_search_string(title, artist, extra_list=None):
         terms.extend(extra_list)
     return " ".join([str(t).lower() for t in terms if t])
 
+def perform_auto_backup(db: Session):
+    """Creates a backup file and updates the last_backup timestamp."""
+    try:
+        # Re-use existing backup logic
+        data = backup_db(db) # We call the existing backup_db function
+        
+        filename = f"autobackup_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.json"
+        filepath = os.path.join(BACKUP_DIR, filename)
+        
+        with open(filepath, "w") as f:
+            json.dump(data, f)
+            
+        # Update last_backup timestamp setting
+        s = db.query(database.Settings).filter(database.Settings.key == "last_backup_timestamp").first()
+        now_ts = str(int(time.time()))
+        if not s:
+            db.add(database.Settings(key="last_backup_timestamp", value=now_ts))
+        else:
+            s.value = now_ts # type: ignore
+        db.commit()
+        logger.info(f"Auto-backup created: {filename}")
+    except Exception as e:
+        logger.error(f"Auto-backup failed: {e}")
+
+def backup_scheduler_loop():
+    """Background thread that checks if backup is due every hour."""
+    while True:
+        time.sleep(3600) # Check every hour
+        try:
+            db = database.SessionLocal()
+            
+            # Get Settings
+            s_enabled = db.query(database.Settings).filter(database.Settings.key == "auto_backup_enabled").first()
+            s_freq = db.query(database.Settings).filter(database.Settings.key == "auto_backup_frequency").first()
+            s_last = db.query(database.Settings).filter(database.Settings.key == "last_backup_timestamp").first()
+            
+            enabled = s_enabled.value == "true" if s_enabled else False
+            days_freq = int(s_freq.value) if s_freq and s_freq.value.isdigit() else 7 # type: ignore
+            last_ts = int(s_last.value) if s_last and s_last.value.isdigit() else 0 # type: ignore
+            
+            if enabled: # type: ignore
+                # Calculate time passed
+                seconds_needed = days_freq * 86400
+                now = int(time.time())
+                
+                if (now - last_ts) > seconds_needed:
+                    logger.info("Auto-backup due. Starting...")
+                    perform_auto_backup(db)
+                    
+            db.close()
+        except Exception as e:
+            logger.error(f"Backup scheduler error: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     os.makedirs(INPUT_DIR, exist_ok=True)
@@ -114,6 +170,9 @@ async def startup_event():
         logger.error(f"Cleanup failed: {e}")
     finally:
         db.close()
+
+    # --- START BACKUP SCHEDULER ---
+    threading.Thread(target=backup_scheduler_loop, daemon=True).start()
         
     logger.info("Server Started Successfully")
 
@@ -548,6 +607,8 @@ def get_settings_api(db: Session = Depends(get_db)):
     if "default_direction" not in s_dict: s_dict["default_direction"] = "LTR" # type: ignore
     if "show_uncategorized" not in s_dict: s_dict["show_uncategorized"] = "false" # type: ignore
     if "server_name" not in s_dict: s_dict["server_name"] = "Manga Server" # type: ignore
+    if "auto_backup_enabled" not in s_dict: s_dict["auto_backup_enabled"] = "false" # type: ignore
+    if "auto_backup_frequency" not in s_dict: s_dict["auto_backup_frequency"] = "7" # type: ignore
     return s_dict
 
 @app.post("/api/settings")

@@ -46,9 +46,31 @@
                     <h3>Database & Backup</h3>
                 </div>
                 <div class="panel-body">
+                    <div style="margin-bottom: 20px; background: #252525; padding: 10px; border-radius: 4px;">
+                        <div class="form-group row-group" style="margin-bottom: 10px; background: transparent; border: none; padding: 0;">
+                            <input type="checkbox" id="bk_enabled" style="width: auto; margin: 0;" onchange="toggleBackupSlider()">
+                            <label for="bk_enabled" style="margin: 0; cursor: pointer; font-weight: bold; color: white;">Enable Auto-Backup</label>
+                        </div>
+
+                        <div id="bk_slider_container" style="opacity: 0.5; pointer-events: none; transition: opacity 0.2s;">
+                            <label style="display: flex; justify-content: space-between; color: #aaa; font-size: 0.9rem; margin-bottom: 5px;">
+                                <span>Backup Frequency</span>
+                                <span id="bk_val_display" style="color: var(--accent);">7 Days</span>
+                            </label>
+                            <input type="range" id="bk_frequency" min="1" max="180" value="7" style="width: 100%; cursor: pointer;" 
+                                   oninput="document.getElementById('bk_val_display').innerText = this.value + ' Days'">
+                        </div>
+                        
+                        <div style="text-align: right; margin-top: 10px;">
+                            <button onclick="saveBackupSettings()" class="btn-small" style="background: #2ecc71;">Save Backup Settings</button>
+                        </div>
+                    </div>
+
+                    <hr style="border: 0; border-top: 1px solid #444; margin: 15px 0;">
+
                     <div style="display: flex; gap: 10px;">
                         <button onclick="downloadBackup()" class="btn-save" style="background: #3498db; flex: 1;">
-                            Download Backup
+                            Download Manual
                         </button>
                         
                         <input type="file" id="restore-input" style="display: none;" onchange="uploadRestore(this)">
@@ -237,6 +259,12 @@
         if (data.default_direction) document.getElementById('set_direction').value = data.default_direction;
         if (data.show_uncategorized === "true") document.getElementById('set_show_uncategorized').checked = true;
         if (data.server_name) document.getElementById('set_server_name').value = data.server_name;
+        // Load Backup Settings
+        const bkEnabled = data.auto_backup_enabled === "true";
+        document.getElementById('bk_enabled').checked = bkEnabled;
+        document.getElementById('bk_frequency').value = data.auto_backup_frequency || 7;
+        document.getElementById('bk_val_display').innerText = (data.auto_backup_frequency || 7) + " Days";
+        toggleBackupSlider(); // Set initial visual state
     }
 
     async function saveSettings(e) {
@@ -421,6 +449,31 @@
         const res = await fetch("/api/restore", { method: "POST", body: formData });
         if (res.ok) { alert("Restore Complete!"); location.reload(); }
         else alert("Restore Failed");
+    }
+
+    function toggleBackupSlider() {
+        const enabled = document.getElementById('bk_enabled').checked;
+        const container = document.getElementById('bk_slider_container');
+        if (enabled) {
+            container.style.opacity = "1";
+            container.style.pointerEvents = "auto";
+        } else {
+            container.style.opacity = "0.5";
+            container.style.pointerEvents = "none";
+        }
+    }
+
+    async function saveBackupSettings() {
+        const payload = {
+            auto_backup_enabled: document.getElementById('bk_enabled').checked ? "true" : "false",
+            auto_backup_frequency: document.getElementById('bk_frequency').value
+        };
+        const res = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) alert("Backup Settings Saved!");
     }
 
     // INIT
