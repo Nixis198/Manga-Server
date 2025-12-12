@@ -40,7 +40,42 @@
                     </form>
                 </div>
             </div>
+            <div class="card panel">
+                <div class="panel-header">
+                    <h3>System & Network</h3>
+                </div>
+                <div class="panel-body">
+                    <div class="form-group">
+                        <label>Device Name (Hostname)</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="sys_hostname" placeholder="mangaserver">
+                            <button onclick="saveHostname()" class="btn-small" style="background: #34495e;">Rename</button>
+                        </div>
+                        <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">
+                            Access via: <span id="sys_address_preview" style="color: var(--accent);">http://...</span>
+                        </div>
+                    </div>
 
+                    <hr style="border: 0; border-top: 1px solid #444; margin: 15px 0;">
+
+                    <div class="form-group">
+                        <label>Network Mode</label>
+                        <div id="net_status_badge" style="background: #2ecc71; color: white; padding: 5px 10px; border-radius: 4px; display: inline-block; font-size: 0.9rem; margin-bottom: 10px;">
+                            Checking...
+                        </div>
+                        <div style="font-size: 0.85rem; color: #aaa; margin-bottom: 10px;">
+                            Current IP: <span id="net_ip" style="font-family: monospace; color: white;">...</span>
+                        </div>
+                        
+                        <button onclick="toggleHotspot()" id="btn_hotspot" class="btn-save" style="background: #e67e22; width: 100%;">
+                            Switch to Hotspot Mode
+                        </button>
+                        <p style="font-size: 0.8rem; color: #888; margin-top: 10px; line-height: 1.4;">
+                            <strong>Warning:</strong> Switching modes will disconnect you. You will need to reconnect to the new network manually.
+                        </p>
+                    </div>
+                </div>
+            </div>
             <div class="card panel">
                 <div class="panel-header">
                     <h3>Database & Backup</h3>
@@ -476,11 +511,68 @@
         if (res.ok) alert("Backup Settings Saved!");
     }
 
+    // --- SYSTEM INFO ---
+    async function loadSystemInfo() {
+        try {
+            const res = await fetch('/api/system/info');
+            const data = await res.json();
+            
+            // Hostname
+            document.getElementById('sys_hostname').value = data.hostname;
+            document.getElementById('sys_address_preview').innerText = `http://${data.hostname}.local/`;
+
+            // Network
+            const net = data.network;
+            const badge = document.getElementById('net_status_badge');
+            const btn = document.getElementById('btn_hotspot');
+            
+            document.getElementById('net_ip').innerText = net.ip;
+
+            if (net.mode === 'hotspot') {
+                badge.innerText = "Hotspot Active (Broadcasting)";
+                badge.style.backgroundColor = "#3498db"; // Blue
+                btn.innerText = "Switch to Home Wi-Fi (Client)";
+                btn.onclick = () => toggleHotspot(false);
+            } else {
+                badge.innerText = `Connected: ${net.ssid}`;
+                badge.style.backgroundColor = "#2ecc71"; // Green
+                btn.innerText = "Switch to Hotspot Mode";
+                btn.onclick = () => toggleHotspot(true);
+            }
+        } catch(e) { console.error("System info error", e); }
+    }
+
+    async function saveHostname() {
+        const name = document.getElementById('sys_hostname').value;
+        if (!confirm(`Rename server to "${name}"? This may require a reboot.`)) return;
+        
+        const res = await fetch('/api/system/hostname', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name })
+        });
+        const d = await res.json();
+        alert(d.message);
+    }
+
+    async function toggleHotspot(enable) {
+        const action = enable ? "Enable Hotspot" : "Connect to Home Wi-Fi";
+        if (!confirm(`${action}? You will lose connection instantly.`)) return;
+
+        await fetch('/api/system/hotspot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ enable: enable })
+        });
+        alert("Command sent. Please verify your Wi-Fi connection.");
+    }
+
     // INIT
     loadSettings();
     loadCategories();
     loadPlugins();
     fetchLogs();
     setInterval(fetchLogs, 5000);
+    loadSystemInfo();
 </script>
 {% endblock %}

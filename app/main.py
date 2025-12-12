@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 # Import our local modules
 from . import database, schemas
-from .services import scanner, importer, reader
+from .services import scanner, importer, reader, system
 from .plugins import manager
 
 # --- CONFIGURATION ---
@@ -719,3 +719,29 @@ def mark_series_read(series_id: int, db: Session = Depends(get_db)):
             
     db.commit()
     return {"status": "success"}
+
+@app.get("/api/system/info")
+def get_system_info():
+    """Returns current hostname and network status"""
+    return {
+        "hostname": system.manager.get_hostname(),
+        "network": system.manager.get_wifi_status()
+    }
+
+@app.post("/api/system/hostname")
+def set_hostname(payload: dict):
+    new_name = payload.get("name", "").strip()
+    if not new_name: raise HTTPException(400, "Name cannot be empty")
+    
+    success, msg = system.manager.set_hostname(new_name)
+    if not success:
+        raise HTTPException(500, detail=msg)
+    return {"status": "success", "message": msg}
+
+@app.post("/api/system/hotspot")
+def toggle_hotspot(payload: dict):
+    enable = payload.get("enable", False)
+    success, msg = system.manager.toggle_hotspot(enable)
+    if not success:
+        raise HTTPException(500, detail=msg)
+    return {"status": "success", "message": msg}
