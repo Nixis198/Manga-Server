@@ -346,3 +346,38 @@ nav .badge {
     height: 100%;
     transition: width 0.2s;
 }
+
+/* Toggle Group Styles */
+    .toggle-group {
+        display: flex;
+        background: #252525;
+        border-radius: 4px;
+        border: 1px solid #444;
+        overflow: hidden;
+    }
+    
+    .toggle-btn {
+        background: transparent;
+        border: none;
+        color: #888;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+        border-right: 1px solid #444;
+    }
+    
+    .toggle-btn:last-child {
+        border-right: none;
+    }
+    
+    .toggle-btn:hover {
+        color: white;
+        background: #333;
+    }
+    
+    .toggle-btn.active {
+        background: var(--accent); /* Uses your orange accent color */
+        color: white;
+        font-weight: bold;
+    }

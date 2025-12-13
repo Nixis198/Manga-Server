@@ -193,79 +193,112 @@ def update_template_globals():
 # --- API ENDPOINTS: PAGES ---
 
 @app.get("/", response_class=HTMLResponse)
-def read_root(request: Request, db: Session = Depends(get_db)):
+def read_root(request: Request):
+    # The JavaScript 'loadLibrary()' will call the API below to fill it.
+    return templates.TemplateResponse("library.html", {"request": request})
+
+@app.get("/api/library")
+def get_library(
+    search: str = "", 
+    category: str = "all",
+    filter_type: str = "all", 
+    db: Session = Depends(get_db)
+):
     items = []
+    search = search.lower()
     
-    # 1. Standalone Galleries
-    standalone = db.query(database.Gallery).filter(database.Gallery.series_id == None).all()
-    for g in standalone:
-        items.append({
-            "type": "gallery",
-            "id": g.id,
-            "title": g.title,
-            "artist": g.artist,
-            "status": g.status,
-            "pages_read": g.pages_read,
-            "pages_total": g.pages_total,
-            "category": g.category.name if g.category else "",
-            "thumb": f"/thumbnails/{g.id}.jpg",
-            "series": "", 
-            "tags": [t.name for t in g.tags],
-            "description": g.description if g.description else "", # type: ignore
-            "search_data": build_search_string(g.title, g.artist)
-        })
-
-    # 2. Series
-    all_series = db.query(database.Series).all()
-    for s in all_series:
-        if not s.galleries:
-            continue
+    # --- 1. Fetch Standalone Galleries ("Books") ---
+    if filter_type in ["all", "books"]:
+        g_query = db.query(database.Gallery).filter(database.Gallery.series_id == None)
+        
+        # Category Filter
+        if category != "all" and category != "uncategorized":
+            if category.isdigit():
+                g_query = g_query.filter(database.Gallery.category_id == int(category))
+        elif category == "uncategorized":
+            g_query = g_query.filter(database.Gallery.category_id == None)
             
-        thumb = get_series_cover(s)
-        total_count = len(s.galleries)
-        read_count = sum(1 for g in s.galleries if g.status == "Completed")
+        galleries = g_query.all()
         
-        any_progress = any(g.status != "New" for g in s.galleries)
+        for g in galleries:
+            s_str = build_search_string(g.title, g.artist)
+            if search and search not in s_str: continue
+
+            items.append({
+                "type": "gallery",
+                "id": g.id,
+                "title": g.title,
+                "artist": g.artist,
+                "status": g.status,
+                "pages_read": g.pages_read,
+                "pages_total": g.pages_total,
+                "category": g.category.name if g.category else "",
+                "thumb": f"/thumbnails/{g.id}.jpg",
+                "series": "", 
+                "tags": [t.name for t in g.tags],
+                "description": g.description if g.description else "", # type: ignore
+                "created_at": g.id 
+            })
+
+    # --- 2. Fetch Series ---
+    if filter_type in ["all", "series"]:
+        s_query = db.query(database.Series)
         
-        series_tags = [t.name for t in s.tags]
-        child_tags = []
-        for g in s.galleries:
-            for t in g.tags:
-                child_tags.append(t.name)
-        all_search_tags = list(set(series_tags + child_tags))
+        # Category Filter
+        if category != "all" and category != "uncategorized":
+            if category.isdigit():
+                s_query = s_query.filter(database.Series.category_id == int(category))
+        elif category == "uncategorized":
+            s_query = s_query.filter(database.Series.category_id == None)
+            
+        series_list = s_query.all()
         
-        if series_tags:
-            display_tags = series_tags
-        else:
-            display_tags = sorted(list(set(child_tags)))
+        for s in series_list:
+            if not s.galleries: continue
+            
+            # Metadata & Search String Construction
+            series_tags = [t.name for t in s.tags]
+            child_tags = []
+            child_titles = []
+            for g in s.galleries:
+                child_titles.append(g.title)
+                for t in g.tags:
+                    child_tags.append(t.name)
+            
+            display_tags = series_tags if series_tags else sorted(list(set(child_tags)))
+            all_search_tags = list(set(series_tags + child_tags))
+            search_blob = build_search_string(s.name, s.artist, child_titles + all_search_tags)
+            
+            if search and search not in search_blob: continue
 
-        child_titles = [g.title for g in s.galleries]
-        child_artists = [g.artist for g in s.galleries]
-        search_blob = build_search_string(s.name, s.artist, child_titles + child_artists + all_search_tags)
+            # Calc Stats
+            read_count = sum(1 for g in s.galleries if g.status == "Completed")
+            any_progress = any(g.status != "New" for g in s.galleries)
 
-        items.append({
-            "type": "series",
-            "id": s.id,
-            "title": s.name,
-            "artist": s.artist if s.artist else "Various",  # type: ignore
-            "status": f"{len(s.galleries)} Items", 
-            "category": s.category.name if s.category else "Series",
-            "thumb": thumb,
-            "count": total_count,
-            "read_count": read_count,
-            "is_new": not any_progress,
-            "series": s.name,
-            "tags": display_tags,
-            "description": s.description if s.description else "", # type: ignore
-            "search_data": search_blob
-        })
+            items.append({
+                "type": "series",
+                "id": s.id,
+                "title": s.name,
+                "artist": s.artist if s.artist else "Various", # type: ignore
+                "status": f"{len(s.galleries)} Items", 
+                "category": s.category.name if s.category else "Series",
+                "thumb": get_series_cover(s),
+                "count": len(s.galleries),
+                "read_count": read_count,
+                "is_new": not any_progress,
+                "series": s.name,
+                "tags": display_tags,
+                "description": s.description if s.description else "", # type: ignore
+                "created_at": s.id
+            })
 
+    # --- 3. Sort (Always A-Z) ---
     items.sort(key=lambda x: x['title'].lower())
-        
-    return templates.TemplateResponse("library.html", {
-        "request": request, 
-        "galleries": items
-    })
+
+    return {
+        "items": items,
+        "total": len(items)
+    }
 
 @app.get("/series/{series_id}", response_class=HTMLResponse)
 def view_series_page(series_id: int, request: Request, db: Session = Depends(get_db)):
