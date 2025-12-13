@@ -1,370 +1,394 @@
 {% extends "base.html" %}
 
+{% block title %}Library{% endblock %}
+
 {% block content %}
-    <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
-        <h1>Library</h1>
-        <input type="text" id="search" placeholder="Search title, artist..." 
-               style="padding: 10px; border-radius: 5px; border: 1px solid #555; background: #333; color: white; width: 300px;">
+<div class="library-container">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h1 style="margin: 0; font-size: 2rem;">Library</h1>
+        <input type="text" id="search-input" placeholder="Search title, artist..." 
+               oninput="debounceSearch()"
+               style="padding: 12px; border-radius: 4px; border: 1px solid #444; background: #222; color: white; width: 300px;">
     </div>
 
-    <div id="filter-bar" class="filter-bar">
-        <button class="filter-btn active" onclick="filterByCategory('all', this)">All</button>
+    <div style="margin-bottom: 15px;">
+        <div class="toggle-group">
+            <button class="toggle-btn active" onclick="setFilterType('all', this)">All</button>
+            <button class="toggle-btn" onclick="setFilterType('series', this)">Series</button>
+            <button class="toggle-btn" onclick="setFilterType('books', this)">Books</button>
+        </div>
     </div>
 
-    <div class="grid" id="gallery-grid">
-        {% for item in galleries %}
+    <div id="category-list" style="margin-bottom: 25px; display: flex; flex-wrap: wrap; gap: 8px;">
+        <div style="color: #666; font-style: italic;">Loading categories...</div>
+    </div>
+
+    <div id="library-grid" class="grid">
+        <div class="loading">Loading library...</div>
+    </div>
+
+</div>
+
+<div id="context-menu" style="display:none; position:absolute; z-index:1000; background:#333; border:1px solid #555; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
+    <div class="ctx-item" id="ctx-read">Read</div>
+    <div class="ctx-item" id="ctx-edit" onclick="openEditModal()">Edit Metadata</div>
+    <div class="ctx-item" id="ctx-mark" onclick="markAsReadCtx()">Mark as Read</div>
+    <div class="ctx-item" id="ctx-download">Download</div>
+</div>
+
+<div id="edit-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
+    <div style="background:#2d2d2d; padding:20px; border-radius:8px; width:500px; max-width:90%;">
+        <h2 id="modal-title" style="margin-top:0;">Edit Metadata</h2>
+        <input type="hidden" id="edit_id">
+        <input type="hidden" id="edit_type">
         
-        {% if item.type == 'series' %}
-        <div class="card series-card" 
-             data-id="{{ item.id }}"
-             data-title="{{ item.title }}"
-             data-artist="{{ item.artist }}"
-             data-category="{{ item.category }}"
-             data-tags="{{ item.tags|join(', ') }}" 
-             data-desc="{{ item.description }}"
-             data-search="{{ item.search_data }}"
-             onclick="window.location.href='/series/{{ item.id }}'">
-            
-            <div style="position: absolute; top: -5px; right: -5px; bottom: 5px; left: 5px; background: #333; z-index: -1; border-radius: 8px; border: 1px solid #555;"></div>
-            
-            <img src="{{ item.thumb }}" loading="lazy" alt="Cover">
-            <div class="card-body">
-                <div class="card-title">{{ item.title }}</div>
-                
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                    <div class="card-artist">Series</div>
-                    
-                    <div style="display: flex; gap: 4px;">
-                        <span class="badge" style="background: #555; float:none;">{{ item.count }} Items</span>
-
-                        {% if item.read_count == item.count and item.count > 0 %}
-                            <span class="badge status-completed" style="float:none;">Completed</span>
-                        {% elif item.is_new %}
-                            <span class="badge status-new" style="float:none;">New</span>
-                        {% else %}
-                            <span class="badge status-reading" style="float:none;">{{ item.read_count }} / {{ item.count }}</span>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
+        <div style="margin-bottom:10px;">
+            <label style="display:block; color:#aaa; font-size:0.8rem;">Title / Name</label>
+            <input type="text" id="edit_title" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
         </div>
-
-        {% else %}
-        <div class="card gallery-card" 
-             data-id="{{ item.id }}"
-             data-title="{{ item.title }}"
-             data-artist="{{ item.artist }}"
-             data-category="{{ item.category }}"
-             data-series="{{ item.series }}" 
-             data-search="{{ item.search_data }}"
-             data-tags="{{ item.tags|join(', ') }}" 
-             data-desc="{{ item.description }}"
-             onclick="window.location.href='/reader/{{ item.id }}'">
-            
-            <img src="{{ item.thumb }}" loading="lazy" alt="Cover">
-            
-            <div class="card-body">
-                <div class="card-title" title="{{ item.title }}">{{ item.title }}</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                    <div class="card-artist" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px;">
-                        {{ item.artist }}
-                    </div>
-                    <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                        {% if item.status == 'Completed' %}
-                            <span class="badge status-completed" style="float:none;">Completed</span>
-                        {% elif item.pages_read|default(0) > 1 %}
-                            <span class="badge status-reading" style="float:none;">{{ item.pages_read }} / {{ item.pages_total }}</span>
-                        {% else %}
-                            <span class="badge status-new" style="float:none;">New</span>
-                        {% endif %}
-                        
-                        {% if item.category %}
-                        <span class="badge" style="float:none; background:#555;">{{ item.category }}</span>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
         
-        {% endfor %}
-    </div>
+        <div style="margin-bottom:10px;">
+            <label style="display:block; color:#aaa; font-size:0.8rem;">Artist</label>
+            <input type="text" id="edit_artist" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+        </div>
 
-    <div id="context-menu" style="display:none; position:absolute; z-index:1000; background:#333; border:1px solid #555; border-radius:4px; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
-        <div class="ctx-item" id="ctx-read">Read</div>
-        <div class="ctx-item" id="ctx-edit" onclick="openEditModal()">Edit Metadata</div>
-        <div class="ctx-item" id="ctx-mark" onclick="markAsReadCtx()">Mark as Read</div>
-        <div class="ctx-item" id="ctx-download">Download</div>
-    </div>
-
-    <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
-        <div style="background:#2d2d2d; padding:20px; border-radius:8px; width:500px; max-width:90%;">
-            <h2 id="modal-title">Edit Metadata</h2>
-            <input type="hidden" id="edit_id">
-            <input type="hidden" id="edit_type"> <div style="margin-bottom:10px;">
-                <label style="display:block; color:#aaa; font-size:0.8rem;">Title / Name</label>
-                <input type="text" id="edit_title" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+            <div style="flex:1;">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Category</label>
+                <select id="edit_category" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+                    <option value="">(None)</option>
+                </select>
             </div>
-            
-            <div style="margin-bottom:10px;">
-                <label style="display:block; color:#aaa; font-size:0.8rem;">Artist</label>
-                <input type="text" id="edit_artist" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
-            </div>
-
-            <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <div style="flex:1;">
-                    <label style="display:block; color:#aaa; font-size:0.8rem;">Category</label>
-                    <select id="edit_category" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
-                        <option value="">(None)</option>
-                    </select>
-                </div>
-                <div style="flex:1;" id="div-edit-series">
-                    <label style="display:block; color:#aaa; font-size:0.8rem;">Series</label>
-                    <input type="text" id="edit_series_name" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
-                </div>
-            </div>
-
-            <div style="margin-bottom:10px;">
-                <label style="display:block; color:#aaa; font-size:0.8rem;">Tags</label>
-                <input type="text" id="edit_tags" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
-            </div>
-
-            <div style="margin-bottom:10px;">
-                <label style="display:block; color:#aaa; font-size:0.8rem;">Description</label>
-                <textarea id="edit_desc" rows="3" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;"></textarea>
-            </div>
-            
-            <div style="text-align:right; margin-top:20px;">
-                <button onclick="closeEditModal()" style="background:#555; color:white; border:none; padding:8px 15px; cursor:pointer; margin-right:10px;">Cancel</button>
-                <button onclick="saveEdit()" style="background:#2ecc71; color:white; border:none; padding:8px 15px; cursor:pointer;">Save Changes</button>
+            <div style="flex:1;" id="div-edit-series">
+                <label style="display:block; color:#aaa; font-size:0.8rem;">Series</label>
+                <input type="text" id="edit_series_name" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
             </div>
         </div>
+
+        <div style="margin-bottom:10px;">
+            <label style="display:block; color:#aaa; font-size:0.8rem;">Tags</label>
+            <input type="text" id="edit_tags" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+        </div>
+
+        <div style="margin-bottom:10px;">
+            <label style="display:block; color:#aaa; font-size:0.8rem;">Description</label>
+            <textarea id="edit_desc" rows="3" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;"></textarea>
+        </div>
+        
+        <div style="text-align:right; margin-top:20px;">
+            <button onclick="closeEditModal()" style="background:#555; color:white; border:none; padding:8px 15px; cursor:pointer; margin-right:10px;">Cancel</button>
+            <button onclick="saveEdit()" style="background:#2ecc71; color:white; border:none; padding:8px 15px; cursor:pointer;">Save Changes</button>
+        </div>
     </div>
+</div>
 
-    <script>
-        // --- 1. SEARCH LOGIC ---
-        document.getElementById('search').addEventListener('keyup', function(e) {
-            const term = e.target.value.toLowerCase();
-            const cards = document.querySelectorAll('.card');
-            
-            cards.forEach(card => {
-                const searchData = card.dataset.search || "";
-                
-                if (searchData.includes(term)) {
-                    const activeFilter = document.querySelector('.filter-btn.active').innerText;
-                    const cardCat = card.dataset.category || "";
-                    
-                    if (activeFilter === "All") card.style.display = 'block';
-                    else if (activeFilter === "Uncategorized" && cardCat === "") card.style.display = 'block';
-                    else if (activeFilter === cardCat) card.style.display = 'block';
-                    else card.style.display = 'none';
-                    
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-        });
+<style>
+    /* TOGGLES & BUTTONS */
+    .toggle-group { display: inline-flex; background: #252525; border-radius: 4px; border: 1px solid #444; overflow: hidden; }
+    .toggle-btn { background: transparent; border: none; color: #888; padding: 8px 20px; cursor: pointer; font-size: 0.95rem; border-right: 1px solid #444; transition: background 0.2s, color 0.2s; }
+    .toggle-btn:last-child { border-right: none; }
+    .toggle-btn:hover { background-color: #333; color: white; }
+    .toggle-btn.active { background-color: var(--accent, #3498db); color: white; font-weight: bold; }
 
-        // --- 2. CATEGORY FILTER LOGIC ---
-        async function loadCategoryFilters() {
-            const container = document.getElementById('filter-bar');
-            
+    /* PILL BUTTONS */
+    .cat-btn { background: #252525; border: 1px solid #444; color: #aaa; padding: 6px 14px; border-radius: 15px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; }
+    .cat-btn:hover { background: #333; color: white; border-color: #666; }
+    .cat-btn.active { background: var(--accent, #3498db); color: white; border-color: var(--accent, #3498db); border-style: solid !important; }
+
+    /* LOADING */
+    .loading { grid-column: 1 / -1; text-align: center; padding: 40px; color: #666; font-style: italic; }
+
+    /* CONTEXT MENU ITEMS */
+    .ctx-item { padding: 10px 20px; cursor: pointer; color: #e0e0e0; }
+    .ctx-item:hover { background-color: var(--accent, #3498db); color: white; }
+</style>
+
+<script>
+    let currentFilterType = "all";
+    let currentCategory = "all";
+    let searchTimeout = null;
+    let selectedItem = null; // Stores data for context menu
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCategories();
+        loadLibrary();
+    });
+
+    // --- VIEW ACTIONS ---
+    function setFilterType(type, btn) {
+        currentFilterType = type;
+        document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadLibrary();
+    }
+
+    function setCategory(catId, btn) {
+        currentCategory = catId;
+        document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadLibrary();
+    }
+
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(loadLibrary, 300);
+    }
+
+    // --- DATA LOADING ---
+    async function loadCategories() {
+        try {
             const [catRes, setRes] = await Promise.all([
                 fetch('/api/categories'),
                 fetch('/api/settings')
             ]);
-            
             const cats = await catRes.json();
             const settings = await setRes.json();
-            const showUncategorized = (settings.show_uncategorized === "true");
+            
+            const container = document.getElementById('category-list');
+            container.innerHTML = ''; 
 
-            let hasUncategorized = false;
-            document.querySelectorAll('.card').forEach(card => {
-                if (!card.dataset.category && !card.classList.contains('series-card')) hasUncategorized = true;
-            });
+            // All
+            const allBtn = document.createElement('button');
+            allBtn.className = 'cat-btn active';
+            allBtn.innerText = 'All';
+            allBtn.onclick = () => setCategory('all', allBtn);
+            container.appendChild(allBtn);
 
-            cats.forEach(cat => {
+            // Uncategorized
+            if (settings.show_uncategorized === "true") {
+                const uncatBtn = document.createElement('button');
+                uncatBtn.className = 'cat-btn';
+                uncatBtn.innerText = 'Uncategorized';
+                uncatBtn.style.borderStyle = 'dashed';
+                uncatBtn.style.borderColor = '#666';
+                uncatBtn.onclick = () => setCategory('uncategorized', uncatBtn);
+                container.appendChild(uncatBtn);
+            }
+
+            // Categories
+            cats.forEach(c => {
                 const btn = document.createElement('button');
-                btn.className = 'filter-btn';
-                btn.innerText = cat.name;
-                btn.onclick = () => filterByCategory(cat.name, btn);
+                btn.className = 'cat-btn';
+                btn.innerText = c.name; 
+                btn.onclick = () => setCategory(c.id, btn);
                 container.appendChild(btn);
             });
+        } catch(e) { console.error("Cat load error", e); }
+    }
 
-            if (showUncategorized && hasUncategorized) {
-                const btn = document.createElement('button');
-                btn.className = 'filter-btn';
-                btn.innerText = "Uncategorized";
-                btn.style.borderColor = "#666";
-                btn.style.borderStyle = "dashed";
-                btn.onclick = () => filterByCategory('__none__', btn);
-                container.appendChild(btn);
-            }
-        }
+    async function loadLibrary() {
+        const search = document.getElementById('search-input').value;
+        const grid = document.getElementById('library-grid');
+        grid.style.opacity = '0.5';
 
-        function filterByCategory(categoryName, btnElement) {
-            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            btnElement.classList.add('active');
-
-            const cards = document.querySelectorAll('.card');
-            cards.forEach(card => {
-                const cardCat = card.dataset.category || ""; 
-                
-                if (categoryName === 'all') {
-                    card.style.display = 'block';
-                } else if (categoryName === '__none__') {
-                    card.style.display = (cardCat === "" && !card.classList.contains('series-card')) ? 'block' : 'none';
-                } else {
-                    card.style.display = (cardCat === categoryName) ? 'block' : 'none';
-                }
-            });
-        }
-
-        // --- 3. CONTEXT MENU & EDIT LOGIC ---
-        let selectedItem = null; // {id, type, dataset}
-
-        document.addEventListener('contextmenu', event => {
-            const card = event.target.closest('.card');
-            if (card) {
-                event.preventDefault();
-                
-                const isSeries = card.classList.contains('series-card') || card.dataset.category === 'Series';
-                
-                selectedItem = {
-                    id: card.dataset.id,
-                    type: isSeries ? 'series' : 'gallery',
-                    dataset: card.dataset
-                };
-
-                // Configure Menu Items dynamically based on type
-                const readBtn = document.getElementById('ctx-read');
-                const dlBtn = document.getElementById('ctx-download');
-                
-                if (isSeries) {
-                    readBtn.innerText = "Open Series";
-                    readBtn.onclick = () => window.location.href = `/series/${selectedItem.id}`;
-                    dlBtn.onclick = () => downloadSeries(selectedItem.id);
-                } else {
-                    readBtn.innerText = "Read";
-                    readBtn.onclick = () => window.location.href = `/reader/${selectedItem.id}`;
-                    dlBtn.onclick = () => window.location.href = `/api/download/${selectedItem.id}`;
-                }
-
-                const menu = document.getElementById('context-menu');
-                menu.style.display = 'block';
-                menu.style.left = `${event.pageX}px`;
-                menu.style.top = `${event.pageY}px`;
-            } else {
-                document.getElementById('context-menu').style.display = 'none';
-            }
-        });
-
-        document.addEventListener('click', () => {
-            document.getElementById('context-menu').style.display = 'none';
-        });
-
-        function downloadSeries(id) {
-            if(confirm("Warning: This will download a single ZIP containing ALL galleries in this series. It may be very large. Continue?")) {
-                window.location.href = `/api/download/series/${id}`;
-            }
-        }
-
-        async function openEditModal() {
-            if(!selectedItem) return;
+        try {
+            // No page, no limit, no sort. Just data.
+            const url = `/api/library?search=${encodeURIComponent(search)}&category=${currentCategory}&filter_type=${currentFilterType}`;
+            const res = await fetch(url);
             
-            // Load Categories
-            const res = await fetch('/api/categories');
-            const cats = await res.json();
-            const select = document.getElementById('edit_category');
-            select.innerHTML = '<option value="">(None)</option>';
-            cats.forEach(cat => {
-                const opt = document.createElement('option');
-                opt.value = cat.name;
-                opt.innerText = cat.name;
-                select.appendChild(opt);
-            });
-
-            // Fill Form
-            document.getElementById('edit_id').value = selectedItem.id;
-            document.getElementById('edit_type').value = selectedItem.type;
+            if (!res.ok) throw new Error("API Error");
             
-            document.getElementById('edit_title').value = selectedItem.dataset.title;
-            document.getElementById('edit_artist').value = selectedItem.dataset.artist;
-            document.getElementById('edit_category').value = selectedItem.dataset.category;
-            document.getElementById('edit_tags').value = selectedItem.dataset.tags;
-            document.getElementById('edit_desc').value = selectedItem.dataset.desc;
-
-            // Toggle Series Input
-            const seriesDiv = document.getElementById('div-edit-series');
-            if (selectedItem.type === 'series') {
-                seriesDiv.style.display = 'none'; // Can't add series to series
-                document.getElementById('modal-title').innerText = "Edit Series Metadata";
-            } else {
-                seriesDiv.style.display = 'block';
-                document.getElementById('modal-title').innerText = "Edit Gallery Metadata";
-                // If it's a gallery, fill the series box
-                document.getElementById('edit_series_name').value = selectedItem.dataset.series || ""; 
-            }
-
-            document.getElementById('edit-modal').style.display = 'flex';
+            const data = await res.json();
+            renderGrid(data.items);
+        } catch(e) {
+            console.error(e);
+            grid.innerHTML = '<div style="padding:20px; color:#e74c3c; text-align:center; grid-column:1/-1;">Error loading library.</div>';
+        } finally {
+            grid.style.opacity = '1';
         }
+    }
+
+    // --- RENDER GRID (Updated to include Data Attributes for Context Menu) ---
+    function renderGrid(items) {
+        const grid = document.getElementById('library-grid');
+        grid.innerHTML = '';
         
-        function closeEditModal() {
-            document.getElementById('edit-modal').style.display = 'none';
+        if (!items || items.length === 0) {
+            grid.innerHTML = '<div style="padding:40px; color:#666; grid-column: 1/-1; text-align:center;">No items found.</div>';
+            return;
         }
 
-        async function saveEdit() {
-            const id = document.getElementById('edit_id').value;
-            const type = document.getElementById('edit_type').value;
+        items.forEach(item => {
+            const isSeries = (item.type === 'series');
+            const href = isSeries ? `/series/${item.id}` : `/reader/${item.id}`;
             
-            const payload = {
-                title: document.getElementById('edit_title').value,
-                artist: document.getElementById('edit_artist').value,
-                category: document.getElementById('edit_category').value,
-                tags: document.getElementById('edit_tags').value.split(',').map(t=>t.trim()),
-                description: document.getElementById('edit_desc').value,
-                direction: "LTR"
-            };
-            
-            if (type === 'series') {
-                // Map title -> name for backend
-                payload.name = payload.title;
-                await fetch(`/api/series/${id}/update`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
-                });
+            // Generate Badges
+            let badgesHtml = '';
+            if (isSeries) {
+                badgesHtml += `<span class="badge" style="background: #555; float:none;">${item.count} Items</span>`;
+                if (item.read_count === item.count && item.count > 0) badgesHtml += `<span class="badge status-completed" style="float:none;">Completed</span>`;
+                else if (item.is_new) badgesHtml += `<span class="badge status-new" style="float:none;">New</span>`;
+                else badgesHtml += `<span class="badge status-reading" style="float:none;">${item.read_count} / ${item.count}</span>`;
             } else {
-                payload.series = document.getElementById('edit_series_name').value;
-                await fetch(`/api/gallery/${id}/update`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
-                });
+                if (item.status === 'Completed') badgesHtml += `<span class="badge status-completed" style="float:none;">Completed</span>`;
+                else if ((item.pages_read || 0) > 1) badgesHtml += `<span class="badge status-reading" style="float:none;">${item.pages_read} / ${item.pages_total}</span>`;
+                else badgesHtml += `<span class="badge status-new" style="float:none;">New</span>`;
+                if (item.category) badgesHtml += `<span class="badge" style="float:none; background:#555;">${item.category}</span>`;
             }
-            location.reload(); 
-        }
 
-        async function markAsReadCtx() {
-            if(!selectedItem) return;
+            const card = document.createElement('div');
+            card.className = 'card';
+            if(isSeries) card.classList.add('series-card'); // Helper class
+            card.onclick = () => window.location.href = href;
+
+            // --- CRITICAL: Add Data Attributes for Context Menu ---
+            card.dataset.id = item.id;
+            card.dataset.title = item.title;
+            card.dataset.artist = item.artist || '';
+            card.dataset.category = item.category || '';
+            card.dataset.series = item.series || '';
+            card.dataset.tags = (item.tags || []).join(', ');
+            card.dataset.desc = item.description || '';
+            card.dataset.type = item.type; // 'gallery' or 'series'
             
-            const isSeries = selectedItem.type === 'series';
-            const url = isSeries 
-                ? `/api/series/${selectedItem.id}/mark-read`
-                : `/api/gallery/${selectedItem.id}/mark-read`;
-                
-            const msg = isSeries
-                ? "Mark entire series as read?"
-                : "Mark gallery as read?";
+            card.innerHTML = `
+                <img src="${item.thumb}" loading="lazy" alt="Cover" onerror="this.src='/static/placeholder.png'">
+                <div class="card-body">
+                    <div class="card-title" title="${item.title}">${item.title}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                        <div class="card-artist" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px;">
+                            ${isSeries ? 'Series' : (item.artist || 'Unknown')}
+                        </div>
+                        <div style="display: flex; gap: 4px; flex-shrink: 0;">${badgesHtml}</div>
+                    </div>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    }
 
-            if(confirm(msg)) {
-                const res = await fetch(url, { method: 'POST' });
-                if(res.ok) location.reload();
-                else alert("Error updating status");
+    // --- CONTEXT MENU LOGIC ---
+    document.addEventListener('contextmenu', event => {
+        const card = event.target.closest('.card');
+        if (card) {
+            event.preventDefault();
+            
+            selectedItem = {
+                id: card.dataset.id,
+                type: card.dataset.type,
+                dataset: card.dataset
+            };
+
+            const isSeries = (selectedItem.type === 'series');
+            const readBtn = document.getElementById('ctx-read');
+            const dlBtn = document.getElementById('ctx-download');
+            
+            if (isSeries) {
+                readBtn.innerText = "Open Series";
+                readBtn.onclick = () => window.location.href = `/series/${selectedItem.id}`;
+                dlBtn.onclick = () => downloadSeries(selectedItem.id);
+            } else {
+                readBtn.innerText = "Read";
+                readBtn.onclick = () => window.location.href = `/reader/${selectedItem.id}`;
+                dlBtn.onclick = () => window.location.href = `/api/download/${selectedItem.id}`;
             }
+
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = `${event.pageX}px`;
+            menu.style.top = `${event.pageY}px`;
+        } else {
+            document.getElementById('context-menu').style.display = 'none';
+        }
+    });
+
+    document.addEventListener('click', () => {
+        document.getElementById('context-menu').style.display = 'none';
+    });
+
+    function downloadSeries(id) {
+        if(confirm("Download entire series as ZIP?")) {
+            window.location.href = `/api/download/series/${id}`;
+        }
+    }
+
+    // --- EDIT MODAL LOGIC ---
+    async function openEditModal() {
+        if(!selectedItem) return;
+        
+        // Load Categories
+        const res = await fetch('/api/categories');
+        const cats = await res.json();
+        const select = document.getElementById('edit_category');
+        select.innerHTML = '<option value="">(None)</option>';
+        cats.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.name;
+            opt.innerText = cat.name;
+            select.appendChild(opt);
+        });
+
+        // Fill Form
+        document.getElementById('edit_id').value = selectedItem.id;
+        document.getElementById('edit_type').value = selectedItem.type;
+        document.getElementById('edit_title').value = selectedItem.dataset.title;
+        document.getElementById('edit_artist').value = selectedItem.dataset.artist;
+        document.getElementById('edit_category').value = selectedItem.dataset.category;
+        document.getElementById('edit_tags').value = selectedItem.dataset.tags;
+        document.getElementById('edit_desc').value = selectedItem.dataset.desc;
+
+        // Toggle Series Input
+        const seriesDiv = document.getElementById('div-edit-series');
+        if (selectedItem.type === 'series') {
+            seriesDiv.style.display = 'none'; 
+            document.getElementById('modal-title').innerText = "Edit Series Metadata";
+        } else {
+            seriesDiv.style.display = 'block';
+            document.getElementById('modal-title').innerText = "Edit Gallery Metadata";
+            document.getElementById('edit_series_name').value = selectedItem.dataset.series || ""; 
         }
 
-        // Init
-        loadCategoryFilters();
-    </script>
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+    
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
+    }
+
+    async function saveEdit() {
+        const id = document.getElementById('edit_id').value;
+        const type = document.getElementById('edit_type').value;
+        
+        const payload = {
+            title: document.getElementById('edit_title').value,
+            artist: document.getElementById('edit_artist').value,
+            category: document.getElementById('edit_category').value,
+            tags: document.getElementById('edit_tags').value.split(',').map(t=>t.trim()),
+            description: document.getElementById('edit_desc').value,
+            direction: "LTR"
+        };
+        
+        if (type === 'series') {
+            payload.name = payload.title; // Series uses 'name'
+            await fetch(`/api/series/${id}/update`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+        } else {
+            payload.series = document.getElementById('edit_series_name').value;
+            await fetch(`/api/gallery/${id}/update`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+        }
+        closeEditModal();
+        loadLibrary(); // Refresh grid
+    }
+
+    async function markAsReadCtx() {
+        if(!selectedItem) return;
+        const isSeries = (selectedItem.type === 'series');
+        const url = isSeries 
+            ? `/api/series/${selectedItem.id}/mark-read`
+            : `/api/gallery/${selectedItem.id}/mark-read`;
+            
+        if(confirm("Mark as read?")) {
+            const res = await fetch(url, { method: 'POST' });
+            if(res.ok) loadLibrary();
+        }
+    }
+</script>
 {% endblock %}
