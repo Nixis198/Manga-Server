@@ -519,23 +519,37 @@
             
             // Hostname
             document.getElementById('sys_hostname').value = data.hostname;
-            document.getElementById('sys_address_preview').innerText = `http://${data.hostname}.local/`;
-
+            
             // Network
             const net = data.network;
             const badge = document.getElementById('net_status_badge');
             const btn = document.getElementById('btn_hotspot');
-            
-            document.getElementById('net_ip').innerText = net.ip;
+            const ipDisplay = document.getElementById('net_ip');
+            const urlPreview = document.getElementById('sys_address_preview');
+
+            ipDisplay.innerText = net.ip;
 
             if (net.mode === 'hotspot') {
-                badge.innerText = "Hotspot Active (Broadcasting)";
-                badge.style.backgroundColor = "#3498db"; // Blue
+                // HOTSPOT MODE
+                badge.innerText = "Hotspot Active";
+                badge.style.backgroundColor = "#3498db"; 
+                
+                // Show the specific Hotspot URL
+                urlPreview.innerHTML = `
+                    <span style="color:#e74c3c; font-weight:bold;">http://${net.ip}:8000</span> 
+                    <br><span style="color:#666; font-size:0.8em;">(Use this IP if .local fails)</span>
+                `;
+                
                 btn.innerText = "Switch to Home Wi-Fi (Client)";
                 btn.onclick = () => toggleHotspot(false);
+                
             } else {
+                // CLIENT MODE
                 badge.innerText = `Connected: ${net.ssid}`;
-                badge.style.backgroundColor = "#2ecc71"; // Green
+                badge.style.backgroundColor = "#2ecc71"; 
+                
+                urlPreview.innerText = `http://${data.hostname}.local:8000`;
+                
                 btn.innerText = "Switch to Hotspot Mode";
                 btn.onclick = () => toggleHotspot(true);
             }
@@ -556,15 +570,45 @@
     }
 
     async function toggleHotspot(enable) {
-        const action = enable ? "Enable Hotspot" : "Connect to Home Wi-Fi";
-        if (!confirm(`${action}? You will lose connection instantly.`)) return;
+        let msg = "";
+        
+        if (enable) {
+            // WARNING FOR SWITCHING TO HOTSPOT
+            msg = "⚠️ SWITCHING TO HOTSPOT MODE ⚠️\n\n" +
+                  "1. The server will disconnect from your home Wi-Fi.\n" +
+                  "2. You must connect your device to the 'MangaServer' Wi-Fi.\n" +
+                  "3. The new address will be:\n\n" +
+                  "   👉 http://10.42.0.1:8000\n\n" +
+                  "Click OK to proceed.";
+        } else {
+            // WARNING FOR SWITCHING TO CLIENT
+            msg = "⚠️ SWITCHING TO CLIENT MODE ⚠️\n\n" +
+                  "The server will stop the Hotspot and connect to your home Wi-Fi.\n" +
+                  "You will lose connection now.\n\n" +
+                  "Look for the server at: http://raspberrypi.local:8000\n" +
+                  "(Or check your router for the new IP address)";
+        }
 
-        await fetch('/api/system/hotspot', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ enable: enable })
-        });
-        alert("Command sent. Please verify your Wi-Fi connection.");
+        if (!confirm(msg)) return;
+
+        try {
+            const res = await fetch('/api/system/hotspot', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ enable: enable })
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert("Command sent! Connection will drop in a few seconds.");
+            } else {
+                alert("Error: " + data.detail);
+            }
+        } catch (e) {
+            // Expected to fail because connection drops instantly
+            alert("Command sent! Connection dropping...");
+        }
     }
 
     // INIT

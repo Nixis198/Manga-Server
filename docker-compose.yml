@@ -5,16 +5,16 @@ services:
     restart: unless-stopped
     
     # CRITICAL: This gives the container permission to control the Pi's hardware
-    # privileged: true
-    # network_mode: "host" 
+    privileged: true
+    network_mode: "host" 
 
-    ports:
-      - "8000:8000"
+    # ports:
+      # - "8000:8000"
     
     environment:
       - DATA_DIR=/app/data
       # Tells our code we are on real hardware
-      - MOCK_MODE=true
+      - MOCK_MODE=false
       
     volumes:
       # 1. Your Data
