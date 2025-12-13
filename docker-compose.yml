@@ -1,14 +1,30 @@
-version: '3.8'
-
 services:
   manga-server:
     build: .
     container_name: manga_server
+    restart: unless-stopped
+    
+    # CRITICAL: This gives the container permission to control the Pi's hardware
+    # privileged: true
+    # network_mode: "host" 
+
     ports:
       - "8000:8000"
-    volumes:
-      - ./app:/app/app       # Hot-reload for development
-      - ./data:/app/data     # Persistent storage for DB and Comics
+    
     environment:
       - DATA_DIR=/app/data
-    restart: unless-stopped
+      # Tells our code we are on real hardware
+      - MOCK_MODE=true
+      
+    volumes:
+      # 1. Your Data
+      - ./data:/app/data
+      - ./app:/app/app
+      
+      # 2. System Control Passthrough (Required for hostnamectl & nmcli)
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/systemd:/var/run/systemd
+      - /etc/localtime:/etc/localtime:ro
+      
+      # 3. Persistence for NetworkManager connections
+      - /etc/NetworkManager/system-connections:/etc/NetworkManager/system-connections
