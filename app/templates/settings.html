@@ -5,7 +5,7 @@
 {% block content %}
 <div class="settings-wrapper">
 
-    <div style="margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+    <div class="header-row">
         <h1>System Settings</h1>
     </div>
 
@@ -40,6 +40,7 @@
                     </form>
                 </div>
             </div>
+
             <div class="card panel">
                 <div class="panel-header">
                     <h3>System & Network</h3>
@@ -67,31 +68,34 @@
                             Current IP: <span id="net_ip" style="font-family: monospace; color: white;">...</span>
                         </div>
                         
-                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <div class="btn-row">
                             <button onclick="toggleHotspot()" id="btn_hotspot" class="btn-save" style="background: #e67e22; flex: 1; margin: 0;">
-                                Switch to Hotspot Mode
+                                Switch Mode
                             </button>
                             <button onclick="openWifiModal()" class="btn-save" style="background: #34495e; flex: 1; margin: 0;">
                                 Scan Wi-Fi
                             </button>
                         </div>
+                        
                         <p style="font-size: 0.8rem; color: #888; margin-top: 10px; line-height: 1.4;">
                             <strong>Warning:</strong> Switching modes will disconnect you. You will need to reconnect to the new network manually.
                         </p>
                     </div>
+                    
                     <hr style="border-color:#444; margin: 20px 0;">
             
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
                             <label style="color:#e74c3c; font-weight:bold;">Power Control</label>
                             <div class="help-text">Safely shut down the Raspberry Pi</div>
                         </div>
                         <button onclick="shutdownSystem()" style="background:#c0392b; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer; font-weight:bold;">
-                            Shutdown System
+                            Shutdown
                         </button>
                     </div>
                 </div>
             </div>
+
             <div class="card panel">
                 <div class="panel-header">
                     <h3>Database & Backup</h3>
@@ -119,7 +123,7 @@
 
                     <hr style="border: 0; border-top: 1px solid #444; margin: 15px 0;">
 
-                    <div style="display: flex; gap: 10px;">
+                    <div class="btn-row">
                         <button onclick="downloadBackup()" class="btn-save" style="background: #3498db; flex: 1;">
                             Download Manual
                         </button>
@@ -196,14 +200,15 @@
 <div id="wifi-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
     <div style="background:#2d2d2d; padding:20px; border-radius:8px; width:400px; max-width:90%; max-height:80vh; display:flex; flex-direction:column;">
         <h2 style="margin-top:0;">Connect to Wi-Fi</h2>
-           
+        
         <div id="wifi-list" style="overflow-y:auto; flex:1; border:1px solid #444; margin-bottom:15px; min-height:150px;">
             <div style="padding:20px; text-align:center; color:#888;">Scanning...</div>
         </div>
 
         <div id="wifi-form" style="display:none;">
             <div style="margin-bottom:10px; font-weight:bold; color:var(--accent);" id="selected-ssid"></div>
-            <input type="password" id="wifi-pass" placeholder="Password (leave empty if Open)" style="width:100%; padding:10px; margin-bottom:10px; background:#1a1a1a; border:1px solid #444; color:white;">
+            <input type="password" id="wifi-pass" placeholder="Password (leave empty if Open)" 
+                   style="width:100%; padding:10px; margin-bottom:10px; background:#1a1a1a; border:1px solid #444; color:white;">
             <div style="display:flex; gap:10px;">
                 <button onclick="saveWifi()" class="btn-save" style="margin:0;">Connect</button>
                 <button onclick="backToList()" style="background:#555; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Back</button>
@@ -221,6 +226,12 @@
         max-width: 1200px;
         margin: 0 auto;
     }
+    
+    .header-row {
+        margin-bottom: 20px; 
+        border-bottom: 1px solid #333; 
+        padding-bottom: 10px;
+    }
 
     .settings-grid {
         display: grid;
@@ -229,14 +240,16 @@
         align-items: start;
     }
 
-    @media (max-width: 800px) {
-        .settings-grid { grid-template-columns: 1fr; }
-    }
-
     .settings-column {
         display: flex;
         flex-direction: column;
         gap: 20px;
+    }
+
+    .btn-row {
+        display: flex; 
+        gap: 10px; 
+        margin-bottom: 10px;
     }
 
     /* CARD STYLES */
@@ -268,7 +281,6 @@
     .form-group { margin-bottom: 15px; }
     .form-group label { display: block; color: #aaa; margin-bottom: 5px; font-size: 0.9rem; }
     
-    /* Fixed Row Group for Checkbox alignment */
     .row-group { 
         display: flex; 
         align-items: center; 
@@ -282,12 +294,11 @@
     select, input[type="text"] {
         width: 100%; padding: 8px;
         background: #111; border: 1px solid #444; color: white; border-radius: 4px;
+        box-sizing: border-box; /* Fix for resizing */
     }
 
-    /* PLUGINS ACCORDION STYLE */
-    .plugin-item {
-        border-bottom: 1px solid #333;
-    }
+    /* PLUGINS ACCORDION */
+    .plugin-item { border-bottom: 1px solid #333; }
     .plugin-header {
         padding: 12px 15px;
         background: #252525;
@@ -321,6 +332,25 @@
         white-space: pre-wrap; 
         border: none;
     }
+
+    /* --- MOBILE OPTIMIZATION --- */
+    @media (max-width: 800px) {
+
+        /* 2. Stack Grid */
+        .settings-grid { 
+            grid-template-columns: 1fr; 
+        }
+
+        /* 3. Stack Button Rows (Download/Restore) */
+        .btn-row {
+            flex-direction: column;
+        }
+
+        /* 4. Padding */
+        .settings-wrapper {
+            padding: 10px;
+        }
+    }
 </style>
 
 <script>
@@ -336,7 +366,7 @@
         document.getElementById('bk_enabled').checked = bkEnabled;
         document.getElementById('bk_frequency').value = data.auto_backup_frequency || 7;
         document.getElementById('bk_val_display').innerText = (data.auto_backup_frequency || 7) + " Days";
-        toggleBackupSlider(); // Set initial visual state
+        toggleBackupSlider(); 
     }
 
     async function saveSettings(e) {
@@ -571,13 +601,12 @@
                 badge.innerText = "Hotspot Active";
                 badge.style.backgroundColor = "#3498db"; 
                 
-                // Show the specific Hotspot URL
                 urlPreview.innerHTML = `
                     <span style="color:#e74c3c; font-weight:bold;">http://${net.ip}:8000</span> 
                     <br><span style="color:#666; font-size:0.8em;">(Use this IP if .local fails)</span>
                 `;
                 
-                btn.innerText = "Switch to Home Wi-Fi (Client)";
+                btn.innerText = "Switch to Client Mode";
                 btn.onclick = () => toggleHotspot(false);
                 
             } else {
@@ -610,7 +639,6 @@
         let msg = "";
         
         if (enable) {
-            // WARNING FOR SWITCHING TO HOTSPOT
             msg = "⚠️ SWITCHING TO HOTSPOT MODE ⚠️\n\n" +
                   "1. The server will disconnect from your home Wi-Fi.\n" +
                   "2. You must connect your device to the 'MangaServer' Wi-Fi.\n" +
@@ -618,7 +646,6 @@
                   "   👉 http://10.42.0.1:8000\n\n" +
                   "Click OK to proceed.";
         } else {
-            // WARNING FOR SWITCHING TO CLIENT
             msg = "⚠️ SWITCHING TO CLIENT MODE ⚠️\n\n" +
                   "The server will stop the Hotspot and connect to your home Wi-Fi.\n" +
                   "You will lose connection now.\n\n" +
@@ -643,7 +670,6 @@
                 alert("Error: " + data.detail);
             }
         } catch (e) {
-            // Expected to fail because connection drops instantly
             alert("Command sent! Connection dropping...");
         }
     }
@@ -682,7 +708,7 @@
         document.getElementById('wifi-form').style.display = 'none';
         document.getElementById('wifi-list').style.display = 'block';
         document.getElementById('btn-cancel-wifi').style.display = 'block';
-        document.getElementById('wifi-list').innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Scanning networks...<br>(This may take 5-10 seconds)</div>';
+        document.getElementById('wifi-list').innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Scanning...</div>';
         
         try {
             const res = await fetch('/api/system/wifi/scan');
@@ -704,7 +730,6 @@
                 item.style.display = "flex";
                 item.style.justifyContent = "space-between";
                 
-                // Signal bars roughly
                 let bars = "▂";
                 if(net.signal > 40) bars += "▄";
                 if(net.signal > 70) bars += "▆";
@@ -762,9 +787,8 @@
             if(res.ok) {
                 alert(data.message);
                 document.getElementById('wifi-modal').style.display = 'none';
-                // Automatically prompt to switch modes?
                 if(confirm("New Wi-Fi saved. Switch to Client Mode now?")) {
-                    toggleHotspot(false); // Switch to client
+                    toggleHotspot(false);
                 }
             } else {
                 alert("Error: " + data.detail);

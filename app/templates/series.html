@@ -5,45 +5,41 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 
-<div style="padding: 20px;">
-    <div style="margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-                <a href="/" style="color: #888; text-decoration: none;">&larr; Back to Library</a>
-                <h1 style="margin: 5px 0;">{{ series.name }}</h1>
-                {% if series.description %}
-                <p style="color: #aaa; margin: 10px 0 0 0; max-width: 800px; line-height: 1.4;">{{ series.description }}</p>
-                {% endif %}
-            </div>
-            <button class="btn-small" onclick="toggleSeriesSettings()">Series Settings</button>
+<div class="series-container">
+    
+    <div class="header-row">
+        <div class="header-info">
+            <a href="/library" class="back-link">&larr; Back to Library</a>
+            <h1>{{ series.name }}</h1>
+            {% if series.description %}
+            <p class="series-desc">{{ series.description }}</p>
+            {% endif %}
         </div>
+        <button class="btn-small header-btn" onclick="toggleSeriesSettings()">Series Settings</button>
     </div>
 
-    <div id="series-settings" style="display: none; background: #2d2d2d; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444;">
+    <div id="series-settings" class="settings-panel">
         <h3>Series Settings</h3>
         
-        <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+        <div class="settings-content">
             
-            <div style="width: 200px; text-align: center;">
-                <img id="setting-preview-img" src="{{ cover_url }}" style="width: 100%; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); margin-bottom: 10px;">
+            <div class="settings-cover">
+                <img id="setting-preview-img" src="{{ cover_url }}">
             </div>
 
-            <div style="flex: 1; min-width: 250px;">
+            <div class="settings-form">
                 <div style="margin-bottom: 15px;">
-                    <label style="display:block; color:#aaa; margin-bottom:5px;">Series Name</label>
-                    <input type="text" id="inp_name" value="{{ series.name }}" style="width: 100%; padding: 8px;">
+                    <label>Series Name</label>
+                    <input type="text" id="inp_name" value="{{ series.name }}">
                 </div>
 
                 <div style="margin-bottom: 15px;">
-                    <label style="display:block; color:#aaa; margin-bottom:5px;">Series Thumbnail</label>
-                    <select id="inp_thumb" style="width: 100%; padding: 8px;" onchange="updatePreview(this)">
-                        
+                    <label>Series Thumbnail</label>
+                    <select id="inp_thumb" onchange="updatePreview(this)">
                         <option value="">(Default - First Gallery)</option>
-                        
                         <option value="__reading__" {% if series.thumbnail_url == '__reading__' %}selected{% endif %}>
                             (Auto - Currently Reading)
                         </option>
-                        
                         {% for g in galleries %}
                         <option value="/thumbnails/{{g.id}}.jpg" {% if series.thumbnail_url == '/thumbnails/' ~ g.id ~ '.jpg' %}selected{% endif %}>
                             {{ g.title }}
@@ -53,25 +49,25 @@
                 </div>
                 
                 <div style="margin-bottom: 15px;">
-                    <label style="display:block; color:#aaa; margin-bottom:5px;">Description</label>
-                    <textarea id="inp_desc" rows="3" style="width: 100%; padding: 8px; background:#1a1a1a; border:1px solid #444; color:white;">{{ series.description }}</textarea>
+                    <label>Description</label>
+                    <textarea id="inp_desc" rows="3">{{ series.description }}</textarea>
                 </div>
             </div>
         </div>
 
-        <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #444; padding-top: 15px;">
-            <button class="btn-small" onclick="toggleReorderMode()" style="background: #e67e22;">Manage Sort Order</button>
-            <button class="btn-save" onclick="saveSeriesSettings()" style="width: auto;">Save Settings</button>
+        <div class="settings-actions">
+            <button class="btn-small btn-reorder" onclick="toggleReorderMode()">Manage Sort Order</button>
+            <button class="btn-save" onclick="saveSeriesSettings()">Save Settings</button>
         </div>
 
         <div id="reorder-tool" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #444;">
             <div style="background: #222; padding: 15px; border-radius: 5px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
                     <strong style="color: #fff;">Drag and Drop Mode Active</strong>
                     <button class="btn-small" onclick="saveOrder()" style="background: var(--accent);">Save New Order</button>
                 </div>
                 
-                <div style="display: flex; gap: 10px; align-items: center;">
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                     <span style="color: #aaa; font-size: 0.9rem;">Quick Sort:</span>
                     <button class="btn-small" onclick="autoSort('title')">By Title</button>
                     <button class="btn-small" onclick="autoSort('filename')">By Filename</button>
@@ -181,24 +177,127 @@
 </div>
 
 <style>
-    /* Visual cue when an item is being dragged */
-    .sortable-ghost {
-        opacity: 0.4;
-        background-color: var(--accent);
+    /* --- BASE LAYOUT --- */
+    .series-container { padding: 20px; }
+    
+    .header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
     }
-    .sortable-drag {
-        cursor: grabbing;
+    
+    .back-link { color: #888; text-decoration: none; }
+    .series-desc { color: #aaa; margin: 10px 0 0 0; max-width: 800px; line-height: 1.4; }
+    h1 { margin: 5px 0; }
+
+    /* SETTINGS PANEL */
+    .settings-panel {
+        display: none;
+        background: #2d2d2d;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border: 1px solid #444;
+    }
+    .settings-content { display: flex; gap: 30px; flex-wrap: wrap; }
+    
+    .settings-cover { width: 200px; text-align: center; }
+    .settings-cover img { 
+        width: 100%; 
+        border-radius: 4px; 
+        box-shadow: 0 4px 8px rgba(0,0,0,0.5); 
+        margin-bottom: 10px; 
+    }
+    
+    .settings-form { flex: 1; min-width: 250px; }
+    .settings-form label { display: block; color: #aaa; margin-bottom: 5px; }
+    .settings-form input, .settings-form select, .settings-form textarea {
+        width: 100%;
+        padding: 8px;
+        background: #1a1a1a;
+        border: 1px solid #444;
+        color: white;
+        box-sizing: border-box; /* Fix width issues */
+    }
+
+    .settings-actions {
+        margin-top: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid #444;
+        padding-top: 15px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .btn-reorder { background: #e67e22; }
+    .sortable-ghost { opacity: 0.4; background-color: var(--accent); }
+    .sortable-drag { cursor: grabbing; }
+
+    /* CONTEXT MENU */
+    .ctx-item { padding: 10px 20px; cursor: pointer; color: #e0e0e0; }
+    .ctx-item:hover { background-color: var(--accent, #3498db); color: white; }
+
+    /* --- MOBILE OPTIMIZATION --- */
+    @media (max-width: 768px) {
+        .series-container { padding: 10px; }
+
+        /* 2. Header Stack */
+        .header-row {
+            flex-direction: column;
+            gap: 15px;
+        }
+        .header-btn {
+            width: 100%;
+        }
+
+        /* 3. Settings Panel Stack */
+        .settings-content {
+            flex-direction: column;
+        }
+        .settings-cover {
+            width: 100%;
+            max-width: 200px;
+            margin: 0 auto;
+        }
+
+        .settings-actions {
+            flex-direction: column;
+        }
+        .settings-actions button {
+            width: 100%;
+        }
+
+        /* 4. Grid Fix (2 Columns) */
+        .grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+        }
+
+        /* 5. Thumbnails Aspect Ratio */
+        .card img {
+            height: auto !important;
+            aspect-ratio: 2 / 3;
+            object-fit: cover;
+        }
+
+        /* 6. Smaller Fonts */
+        h1 { font-size: 1.5rem !important; }
+        .card-title { font-size: 0.85rem !important; }
+        .card-artist { font-size: 0.75rem !important; }
+        .badge { font-size: 0.7rem !important; }
     }
 </style>
 
 <script>
     // --- VARIABLES ---
     let sortableInstance = null;
-    let initialOrder = []; // Store original DOM order for reverting
+    let initialOrder = []; 
     const gridEl = document.getElementById('series-grid');
 
     // --- 1. DATA FOR PREVIEW LOGIC ---
-    // IDE FIX: Read data directly from the HTML cards
     const seriesData = Array.from(document.querySelectorAll('.card')).map(card => {
         return {
             id: parseInt(card.dataset.id),
@@ -214,7 +313,7 @@
 
         if (val === "__reading__") {
             const readingGal = seriesData.find(g => g.status === "Reading");
-            newSrc = readingGal ? readingGal.thumb : seriesData[0].thumb;
+            newSrc = readingGal ? readingGal.thumb : (seriesData[0] ? seriesData[0].thumb : '');
         } 
         else if (val === "") {
             if (seriesData.length > 0) newSrc = seriesData[0].thumb;
@@ -245,6 +344,7 @@
         const thumb = document.getElementById('inp_thumb').value;
         const desc = document.getElementById('inp_desc').value;
 
+        // FIXED: Quotes around ID to satisfy linter
         const res = await fetch(`/api/series/{{ series.id }}/update`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -325,6 +425,7 @@
             idList.push(parseInt(card.dataset.id));
         });
 
+        // FIXED: Quotes around ID to satisfy linter
         const res = await fetch(`/api/series/{{ series.id }}/update`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

@@ -1,100 +1,201 @@
 {% extends "base.html" %}
 
-{% block title %}Upload Galleries{% endblock %}
+{% block title %}Upload{% endblock %}
 
 {% block content %}
-<div class="settings-container">
-    <div class="settings-panel" style="width: 100%;">
-        <h2>Upload Galleries</h2>
-        <div class="help-text">Supported formats: .zip, .cbz</div>
-
-        <div id="drop-zone" class="drop-zone">
-            <p>Drag & Drop files here</p>
-            <p>or</p>
-            <button class="btn-small" onclick="document.getElementById('file-input').click()">Select Files</button>
-            <input type="file" id="file-input" multiple style="display: none;" onchange="handleFiles(this.files)">
-        </div>
-
-        <div id="upload-queue" class="upload-queue">
-            </div>
+<div class="upload-container">
+    
+    <div class="header-row">
+        <h1>Upload Manga</h1>
+        <p style="color: #888; margin: 0;">Supported formats: .zip, .cbz</p>
     </div>
+
+    <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
+        <p style="margin: 0; font-size: 1.2rem; color: #ccc;">
+            <span class="desktop-text">Drag & Drop files here or </span>
+            <span class="mobile-text">Tap to select files</span>
+        </p>
+        <p style="margin: 5px 0 0 0; font-size: 0.9rem; color: #666;">(Max size depends on server config)</p>
+    </div>
+
+    <input type="file" id="file-input" multiple accept=".zip,.cbz" style="display: none;" onchange="handleFiles(this.files)">
+
+    <div id="upload-queue" class="upload-queue"></div>
+
 </div>
-{% endblock %}
 
-{% block scripts %}
-<script>
-    const dropZone = document.getElementById('drop-zone');
-
-    // Drag & Drop Visuals
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.classList.add('drag-over');
-    });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('drag-over');
-        handleFiles(e.dataTransfer.files);
-    });
-
-    function handleFiles(files) {
-        for (let i = 0; i < files.length; i++) {
-            uploadFile(files[i]);
-        }
+<style>
+    /* CONTAINER */
+    .upload-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 0 10px;
     }
 
-    function uploadFile(file) {
-        // 1. Create UI Element
+    /* HEADER */
+    .header-row {
+        margin-bottom: 20px;
+        border-bottom: 1px solid #333;
+        padding-bottom: 15px;
+    }
+    .header-row h1 { margin: 0 0 5px 0; }
+
+    /* DROP ZONE */
+    .drop-zone {
+        border: 2px dashed #444;
+        border-radius: 8px;
+        padding: 60px;
+        text-align: center;
+        background: #252525;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 30px;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+        border-color: var(--accent, #3498db);
+        background: #2c3e50;
+    }
+    .mobile-text { display: none; }
+
+    /* QUEUE ITEMS */
+    .queue-item {
+        background: #252525;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+    .queue-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 0.95rem;
+    }
+    .filename { font-weight: bold; color: #eee; word-break: break-all; }
+    .status { color: #888; font-size: 0.85rem; white-space: nowrap; margin-left: 10px; }
+
+    /* PROGRESS BAR */
+    .progress-bg {
+        background: #333;
+        height: 6px;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    .progress-fill {
+        background: var(--accent, #3498db);
+        height: 100%;
+        width: 0%;
+        transition: width 0.2s;
+    }
+    .progress-fill.error { background: #e74c3c; }
+    .progress-fill.done { background: #2ecc71; }
+
+    /* --- MOBILE OPTIMIZATIONS --- */
+    @media (max-width: 768px) {
+        /* 2. Compact Drop Zone */
+        .drop-zone {
+            padding: 30px 15px;
+        }
+        .desktop-text { display: none; }
+        .mobile-text { display: inline; }
+
+        /* 3. Stacked Queue Info */
+        .queue-header {
+            flex-direction: column;
+            gap: 5px;
+        }
+        .status { margin-left: 0; }
+    }
+</style>
+
+<script>
+    // --- DRAG & DROP LOGIC ---
+    const dropZone = document.getElementById('drop-zone');
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+    });
+
+    dropZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFiles(files);
+    }
+
+    function handleFiles(files) {
+        ([...files]).forEach(uploadFile);
+    }
+
+    // --- UPLOAD LOGIC ---
+    async function uploadFile(file) {
+        // Create UI Element
         const queue = document.getElementById('upload-queue');
         const item = document.createElement('div');
         item.className = 'queue-item';
         
+        // Unique ID for progress updates
+        const id = 'upl-' + Math.random().toString(36).substr(2, 9);
+        
         item.innerHTML = `
-            <div class="queue-info">
-                <span class="queue-name">${file.name}</span>
-                <span class="queue-status">Waiting...</span>
+            <div class="queue-header">
+                <span class="filename">${file.name}</span>
+                <span class="status" id="status-${id}">Uploading...</span>
             </div>
             <div class="progress-bg">
-                <div class="progress-fill" style="width: 0%"></div>
+                <div class="progress-fill" id="prog-${id}"></div>
             </div>
         `;
-        queue.appendChild(item);
+        queue.prepend(item); // Add to top
 
-        const statusText = item.querySelector('.queue-status');
-        const progressBar = item.querySelector('.progress-fill');
-
-        // 2. Prepare Upload
+        // Perform Upload
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append('file', file);
 
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/upload", true);
+        xhr.open('POST', '/api/upload', true);
 
-        // 3. Track Progress
-        xhr.upload.onprogress = (e) => {
+        // Progress Handler
+        xhr.upload.onprogress = function(e) {
             if (e.lengthComputable) {
                 const percent = (e.loaded / e.total) * 100;
-                progressBar.style.width = percent + "%";
-                statusText.innerText = Math.round(percent) + "%";
+                document.getElementById(`prog-${id}`).style.width = percent + '%';
             }
         };
 
-        // 4. Handle Completion
-        xhr.onload = () => {
+        // Complete Handler
+        xhr.onload = function() {
+            const statusParams = document.getElementById(`status-${id}`);
+            const progBar = document.getElementById(`prog-${id}`);
+            
             if (xhr.status === 200) {
-                statusText.innerText = "Done";
-                statusText.style.color = "#2ecc71";
-                progressBar.style.backgroundColor = "#2ecc71";
+                statusParams.innerText = "Done ✓";
+                statusParams.style.color = "#2ecc71";
+                progBar.classList.add('done');
             } else {
-                statusText.innerText = "Error";
-                statusText.style.color = "#e74c3c";
-                progressBar.style.backgroundColor = "#e74c3c";
+                statusParams.innerText = "Failed";
+                statusParams.style.color = "#e74c3c";
+                progBar.classList.add('error');
             }
         };
 
-        xhr.onerror = () => {
-            statusText.innerText = "Failed";
-            statusText.style.color = "#e74c3c";
+        xhr.onerror = function() {
+            document.getElementById(`status-${id}`).innerText = "Network Error";
+            document.getElementById(`prog-${id}`).classList.add('error');
         };
 
         xhr.send(formData);

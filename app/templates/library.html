@@ -5,11 +5,10 @@
 {% block content %}
 <div class="library-container">
     
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+    <div class="header-row">
         <h1 style="margin: 0; font-size: 2rem;">Library</h1>
         <input type="text" id="search-input" placeholder="Search title, artist..." 
-               oninput="debounceSearch()"
-               style="padding: 12px; border-radius: 4px; border: 1px solid #444; background: #222; color: white; width: 300px;">
+               oninput="debounceSearch()">
     </div>
 
     <div style="margin-bottom: 15px;">
@@ -84,24 +83,141 @@
 </div>
 
 <style>
-    /* TOGGLES & BUTTONS */
-    .toggle-group { display: inline-flex; background: #252525; border-radius: 4px; border: 1px solid #444; overflow: hidden; }
-    .toggle-btn { background: transparent; border: none; color: #888; padding: 8px 20px; cursor: pointer; font-size: 0.95rem; border-right: 1px solid #444; transition: background 0.2s, color 0.2s; }
+    /* --- BASE STYLES --- */
+    
+    /* 1. TOGGLE BUTTONS (Square-ish) */
+    .toggle-group {
+        display: inline-flex;
+        background: #252525;
+        border-radius: 4px;
+        border: 1px solid #444;
+        overflow: hidden;
+    }
+    .toggle-btn {
+        background: transparent;
+        border: none;
+        color: #888;
+        padding: 8px 20px;
+        cursor: pointer;
+        font-size: 0.95rem;
+        border-right: 1px solid #444;
+        transition: background 0.2s, color 0.2s;
+    }
     .toggle-btn:last-child { border-right: none; }
     .toggle-btn:hover { background-color: #333; color: white; }
-    .toggle-btn.active { background-color: var(--accent, #3498db); color: white; font-weight: bold; }
+    .toggle-btn.active {
+        background-color: var(--accent, #3498db);
+        color: white;
+        font-weight: bold;
+    }
 
-    /* PILL BUTTONS */
-    .cat-btn { background: #252525; border: 1px solid #444; color: #aaa; padding: 6px 14px; border-radius: 15px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; }
-    .cat-btn:hover { background: #333; color: white; border-color: #666; }
-    .cat-btn.active { background: var(--accent, #3498db); color: white; border-color: var(--accent, #3498db); border-style: solid !important; }
+    /* 2. CATEGORY BUTTONS (Pills) */
+    .cat-btn {
+        background: #252525;
+        border: 1px solid #444;
+        color: #aaa;
+        padding: 6px 14px;
+        border-radius: 15px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+        white-space: nowrap; /* Prevent text wrapping inside pill */
+    }
+    .cat-btn:hover {
+        background: #333;
+        color: white;
+        border-color: #666;
+    }
+    .cat-btn.active {
+        background: var(--accent, #3498db);
+        color: white;
+        border-color: var(--accent, #3498db);
+        border-style: solid !important;
+    }
 
-    /* LOADING */
+    /* 3. LOADING & CONTEXT */
     .loading { grid-column: 1 / -1; text-align: center; padding: 40px; color: #666; font-style: italic; }
-
-    /* CONTEXT MENU ITEMS */
     .ctx-item { padding: 10px 20px; cursor: pointer; color: #e0e0e0; }
     .ctx-item:hover { background-color: var(--accent, #3498db); color: white; }
+
+    /* --- LAYOUT OVERRIDES --- */
+    
+    /* Header Container */
+    .header-row {
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        margin-bottom: 15px;
+        flex-wrap: wrap; /* Allow wrapping on small screens */
+        gap: 10px;
+    }
+
+    /* Search Input */
+    #search-input {
+        padding: 12px; 
+        border-radius: 4px; 
+        border: 1px solid #444; 
+        background: #222; 
+        color: white; 
+        width: 300px;
+        transition: width 0.2s;
+    }
+
+    /* --- MOBILE OPTIMIZATIONS --- */
+    @media (max-width: 768px) {
+
+        /* 2. Fix the Library Header */
+        .header-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        
+        h1 { font-size: 1.5rem !important; text-align: center; }
+
+        #search-input {
+            width: 100% !important;
+            box-sizing: border-box;
+        }
+
+        /* 3. Fix the Filter Buttons */
+        .toggle-group {
+            display: flex;
+            width: 100%;
+        }
+        .toggle-btn {
+            flex: 1;
+            padding: 10px 5px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        /* 4. Fix the Grid (2 columns) */
+        .grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+        }
+        
+        /* --- THUMBNAIL FIX --- */
+        /* This overrides the desktop 'height: 300px' */
+        .card img {
+            height: auto !important;     /* Stop forcing 300px height */
+            aspect-ratio: 2 / 3;         /* Force standard book ratio */
+            object-fit: cover;           /* Fill the area nicely */
+        }
+        
+        /* Smaller Text for Mobile */
+        .card-title { font-size: 0.85rem !important; }
+        .card-artist { font-size: 0.75rem !important; }
+        .badge { font-size: 0.6rem !important; padding: 2px 4px !important; }
+        
+        /* 5. Horizontal Scroll for Categories */
+        #category-list {
+            flex-wrap: nowrap !important;
+            overflow-x: auto;
+            padding-bottom: 5px;
+            -webkit-overflow-scrolling: touch;
+        }
+    }
 </style>
 
 <script>

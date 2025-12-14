@@ -1,35 +1,34 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div style="display: flex; height: calc(100vh - 80px); border: 1px solid #444; border-radius: 4px; overflow: hidden; background: #1e1e1e;">
+<div class="staging-container">
     
-    <div style="width: 280px; display: flex; flex-direction: column; background: #252525; border-right: 1px solid #444;">
-        <div style="padding: 12px 15px; background: #1a1a1a; border-bottom: 1px solid #333; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+    <div class="sidebar">
+        <div class="sidebar-header">
             <span>Staging Area</span>
             <button onclick="scanFiles()" class="btn-small" style="font-size: 0.8rem;">Rescan</button>
         </div>
-        <div id="file-list" style="flex: 1; overflow-y: auto;">
+        <div id="file-list" class="file-list">
             <div style="padding: 20px; color: #888; text-align: center;">Loading...</div>
         </div>
     </div>
 
-    <div id="editor-area" style="flex: 1; display: none; flex-direction: column; position: relative;">
+    <div id="editor-area" class="editor-area">
         
-        <div style="flex: 1; overflow-y: auto; padding: 20px; display: flex; gap: 30px;">
+        <div class="editor-scroll-content">
             
-            <div style="width: 300px; flex-shrink: 0; position: sticky; top: 0; height: fit-content;">
-                <div style="background: #000; border: 1px solid #444; border-radius: 8px; overflow: hidden; aspect-ratio: 2/3; display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
-                    <img id="preview-img" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+            <div class="preview-col">
+                <div class="preview-card">
+                    <img id="preview-img" alt="Cover Preview">
                 </div>
                 
-                <div style="background: #252525; padding: 15px; border-radius: 6px; border: 1px solid #444;">
-                    <div style="font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px;">Filename</div>
-                    <div id="preview-filename" style="word-break: break-all; font-family: monospace; font-size: 0.9rem; color: #ddd; line-height: 1.4;">-</div>
+                <div class="filename-badge">
+                    <div class="badge-label">Filename</div>
+                    <div id="preview-filename">-</div>
                 </div>
             </div>
 
-            <div style="flex: 1; max-width: 800px;">
-                
+            <div class="form-col">
                 <form id="import-form" onsubmit="submitImport(event)">
                     <input type="hidden" id="inp_id">
                     <button type="submit" style="display: none;"></button>
@@ -76,20 +75,19 @@
                         <textarea id="inp_desc" rows="3" class="form-input" style="font-size: 0.9rem;"></textarea>
                     </div>
 
-                    <div style="background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 10px; margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
+                    <div class="plugin-box">
                         <div style="font-weight: bold; color: var(--accent); white-space: nowrap;">⚡ Metadata Source:</div>
-                        <select id="plugin_source" style="flex: 1; min-width: 120px;">
+                        <select id="plugin_source" style="flex: 1; min-width: 120px; background:#111; color:white; border:1px solid #444; padding:5px;">
                             <option value="" disabled selected>Select Plugin...</option>
                         </select>
-                        <input type="text" id="plugin_url" placeholder="Paste URL or ID..." style="flex: 2;">
+                        <input type="text" id="plugin_url" placeholder="Paste URL or ID..." style="flex: 2; background:#111; color:white; border:1px solid #444; padding:5px;">
                         <button type="button" onclick="runPlugin()" class="btn-small" style="background: #34495e;">Fetch</button>
                     </div>
-
                 </form>
             </div>
         </div>
 
-        <div style="padding: 15px 20px; background: #252525; border-top: 1px solid #444; text-align: right; box-shadow: 0 -4px 10px rgba(0,0,0,0.2);">
+        <div class="save-bar">
             <button onclick="document.getElementById('import-form').requestSubmit()" class="btn-save" style="padding: 10px 40px; font-size: 1.1rem;">
                 Save & Import
             </button>
@@ -97,41 +95,147 @@
 
     </div>
     
-    <div id="empty-state" style="flex: 1; display: flex; align-items: center; justify-content: center; color: #666; flex-direction: column;">
+    <div id="empty-state" class="empty-state">
         <div style="font-size: 3rem; margin-bottom: 10px;">📂</div>
         <div>Select a file to begin editing</div>
     </div>
 </div>
 
 <style>
-    /* UTILITIES */
+    /* --- LAYOUT STRUCTURE --- */
+    .staging-container {
+        display: flex;
+        height: calc(100vh - 80px);
+        border: 1px solid #444;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #1e1e1e;
+    }
+
+    /* Sidebar */
+    .sidebar {
+        width: 280px;
+        display: flex;
+        flex-direction: column;
+        background: #252525;
+        border-right: 1px solid #444;
+        flex-shrink: 0;
+    }
+    .sidebar-header {
+        padding: 12px 15px;
+        background: #1a1a1a;
+        border-bottom: 1px solid #333;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .file-list { flex: 1; overflow-y: auto; }
+
+    /* Editor Area */
+    .editor-area {
+        flex: 1;
+        display: none; /* Default Hidden */
+        flex-direction: column;
+        position: relative;
+        min-width: 0;
+    }
+
+    .editor-scroll-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        gap: 30px;
+    }
+
+    .preview-col {
+        width: 300px;
+        flex-shrink: 0;
+        position: sticky;
+        top: 0;
+        height: fit-content;
+    }
+
+    .form-col {
+        flex: 1;
+        max-width: 800px;
+        min-width: 0; 
+    }
+
+    .save-bar {
+        padding: 15px 20px;
+        background: #252525;
+        border-top: 1px solid #444;
+        text-align: right;
+        box-shadow: 0 -4px 10px rgba(0,0,0,0.2);
+        z-index: 10;
+    }
+
+    .empty-state {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #666;
+        flex-direction: column;
+    }
+
+    /* --- COMPONENT STYLES --- */
+    .preview-card {
+        background: #000;
+        border: 1px solid #444;
+        border-radius: 8px;
+        overflow: hidden;
+        aspect-ratio: 2/3;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 15px;
+    }
+    #preview-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+    .filename-badge {
+        background: #252525;
+        padding: 15px;
+        border-radius: 6px;
+        border: 1px solid #444;
+    }
+    .badge-label { font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+    #preview-filename { word-break: break-all; font-family: monospace; font-size: 0.9rem; color: #ddd; line-height: 1.4; }
+
+    .plugin-box {
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 6px;
+        padding: 10px;
+        margin-bottom: 10px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap; 
+    }
+
     .form-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 15px;
     }
-    .form-label {
-        display: block; 
-        color: #aaa; 
-        margin-bottom: 5px; 
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
+    .form-label { display: block; color: #aaa; margin-bottom: 5px; font-size: 0.85rem; font-weight: 500; }
     .form-input {
-        width: 100%; 
+        width: 100%;
         padding: 10px;
-        background: #111; 
-        border: 1px solid #444; 
-        color: white; 
+        background: #111;
+        border: 1px solid #444;
+        color: white;
         border-radius: 4px;
         transition: border-color 0.2s;
+        box-sizing: border-box; 
     }
-    .form-input:focus {
-        border-color: var(--accent);
-        outline: none;
-    }
+    .form-input:focus { border-color: var(--accent); outline: none; }
+    textarea { resize: vertical; }
 
-    /* FILE LIST ITEMS */
+    /* File List Items */
     .file-item {
         padding: 12px 15px;
         border-bottom: 1px solid #333;
@@ -144,8 +248,76 @@
     }
     .file-item:hover { background: #333; }
     .file-item.active { background: var(--accent); color: white; border-bottom-color: var(--accent); }
-    
-    textarea { resize: vertical; }
+
+    /* --- MOBILE OPTIMIZATION --- */
+    @media (max-width: 768px) {
+        .staging-container {
+            flex-direction: column;
+            height: auto;
+            border: none;
+            background: transparent;
+            padding: 10px; 
+        }
+
+        .sidebar {
+            width: 100%;
+            height: 250px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            background: #252525;
+        }
+
+        .editor-scroll-content {
+            flex-direction: column;
+            padding: 10px;
+            gap: 15px;
+        }
+
+        .preview-col {
+            width: 100%;
+            position: static; 
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .preview-card {
+            width: 100px;
+            margin-bottom: 0;
+            flex-shrink: 0;
+        }
+        .filename-badge {
+            flex: 1;
+            padding: 10px;
+            font-size: 0.8rem;
+        }
+        
+        .form-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .plugin-box {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .save-bar {
+            position: sticky;
+            bottom: 0;
+            padding: 10px;
+        }
+        .save-bar button {
+            width: 100%;
+        }
+
+        /* FIX: Only hide the "Empty State" message on mobile.
+           We do NOT force editor-area to flex here anymore.
+           It will stay hidden until JS enables it.
+        */
+        .empty-state {
+            display: none; 
+        }
+    }
 </style>
 
 <script>
@@ -187,13 +359,25 @@
     async function selectFile(id) {
         document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
         const activeEl = document.querySelector(`.file-item[data-id="${id}"]`);
-        if(activeEl) activeEl.classList.add('active');
+        if(activeEl) {
+            activeEl.classList.add('active');
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
 
         const file = stagedFiles.find(f => f.id === id);
         if (!file) return;
 
-        document.getElementById('empty-state').style.display = 'none';
-        document.getElementById('editor-area').style.display = 'flex';
+        const emptyState = document.getElementById('empty-state');
+        if(emptyState) emptyState.style.display = 'none';
+        
+        // --- REVEAL EDITOR ---
+        const editor = document.getElementById('editor-area');
+        editor.style.display = 'flex';
+        
+        // Auto-scroll on mobile
+        if (window.innerWidth <= 768) {
+             editor.scrollIntoView({ behavior: 'smooth' });
+        }
         
         document.getElementById('preview-filename').innerText = file.filename;
         const img = document.getElementById('preview-img');
@@ -201,7 +385,7 @@
 
         document.getElementById('inp_id').value = id;
         
-        // Auto-fill
+        // Auto-fill inputs
         let title = file.filename;
         let artist = "";
         const match = title.match(/^\[(.*?)\]\s*(.*?)(\.zip|\.cbz)?$/);
@@ -221,8 +405,10 @@
         document.getElementById('inp_desc').value = "";
         document.getElementById('plugin_url').value = ""; 
 
-        titleInput.focus();
-        titleInput.select();
+        if (window.innerWidth > 768) {
+            titleInput.focus();
+            titleInput.select();
+        }
     }
 
     // --- 2. GHOST TEXT AUTOCOMPLETE ---
@@ -258,13 +444,8 @@
             
             if (match) {
                 const currentLen = val.length;
-                
-                // FIX: Instead of replacing the input with the match (which forces casing),
-                // we append the missing suffix from the match to the user's existing input.
-                // This preserves user's capitalization (e.g. "Kar" + "ory" -> "Karory")
                 const suffix = match.slice(currentLen);
                 input.value = val + suffix;
-                
                 input.setSelectionRange(currentLen, input.value.length);
             }
         });
@@ -314,8 +495,11 @@
                     selectFile(stagedFiles[nextIndex].id);
                 } else {
                     document.getElementById('editor-area').style.display = 'none';
-                    document.getElementById('empty-state').style.display = 'flex';
-                    document.getElementById('empty-state').innerHTML = '<div>All files imported!</div>';
+                    const es = document.getElementById('empty-state');
+                    if(es) {
+                        es.style.display = 'flex';
+                        es.innerHTML = '<div>All files imported!</div>';
+                    }
                 }
 
             } else {
