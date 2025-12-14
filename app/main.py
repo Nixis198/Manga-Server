@@ -601,7 +601,18 @@ def run_plugin(payload: dict, db: Session = Depends(get_db)):
 @app.get("/api/categories")
 def get_categories(db: Session = Depends(get_db)):
     cats = db.query(database.Category).all()
-    return [{"id": c.id, "name": c.name, "count": len(c.galleries)} for c in cats]
+    results = []
+    for c in cats:
+        # 1. Count Books (using relationship)
+        book_count = len(c.galleries)
+        # 2. Count Series (using direct query for safety)
+        series_count = db.query(database.Series).filter(database.Series.category_id == c.id).count()
+        results.append({
+            "id": c.id, 
+            "name": c.name, 
+            "count": book_count + series_count
+        })
+    return results
 
 @app.post("/api/categories")
 def add_category(payload: dict, db: Session = Depends(get_db)):
@@ -617,9 +628,17 @@ def add_category(payload: dict, db: Session = Depends(get_db)):
 def delete_category(cat_id: int, force: bool = False, db: Session = Depends(get_db)):
     cat = db.query(database.Category).filter(database.Category.id == cat_id).first()
     if not cat: raise HTTPException(404, "Not found")
-    if len(cat.galleries) > 0 and not force:
-        return {"status": "conflict", "message": f"Contains {len(cat.galleries)} items"}
-    for g in cat.galleries: g.category_id = None
+    # Check for items (Books AND Series)
+    series_in_cat = db.query(database.Series).filter(database.Series.category_id == cat.id).all()
+    total_items = len(cat.galleries) + len(series_in_cat)
+    if total_items > 0 and not force:
+        return {"status": "conflict", "message": f"Contains {total_items} items"}
+    # Unlink Books
+    for g in cat.galleries: 
+        g.category_id = None
+    # Unlink Series
+    for s in series_in_cat:
+        s.category_id = None # type: ignore
     db.delete(cat)
     db.commit()
     return {"status": "deleted"}
