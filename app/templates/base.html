@@ -6,12 +6,78 @@
     <title>{{ server_name }} - {% block title %}Library{% endblock %}</title>
 
     <link rel="stylesheet" href="/static/css/style.css">
+
+    <style>
+        /* --- GLOBAL NAVIGATION STYLES --- */
+        
+        /* Desktop Default */
+        nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #1e1e1e; /* Ensure dark background */
+            padding: 10px 20px;
+            border-bottom: 1px solid #333;
+        }
+
+        /* Brand / Server Name */
+        nav .brand {
+            font-size: 1.5rem; /* Bigger Title */
+            font-weight: bold;
+            color: var(--accent, #3498db); /* Use accent color if available, else blue */
+        }
+        
+        nav .brand a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        /* Links */
+        nav .links a {
+            color: #ccc;
+            text-decoration: none;
+            margin-left: 20px;
+            font-size: 1rem;
+            transition: color 0.2s;
+        }
+        nav .links a:hover { color: white; }
+
+        /* --- MOBILE NAVIGATION FIX --- */
+        @media (max-width: 768px) {
+            nav {
+                flex-direction: column;
+                gap: 10px;
+                padding: 15px 10px !important;
+            }
+            
+            nav .brand {
+                text-align: center;
+                width: 100%;
+                margin-bottom: 5px;
+                font-size: 1.8rem; /* Even bigger on mobile for touch targets */
+            }
+            
+            nav .links {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 20px; /* Spacing between links */
+                width: 100%;
+            }
+            
+            nav .links a { 
+                margin-left: 0 !important; 
+                font-size: 1.1rem; /* Easier to tap */
+                padding: 5px;
+            }
+        }
+    </style>
 </head>
 <body>
 
     <nav>
         <div class="brand">
-            <a href="/" style="text-decoration: none; color: inherit;">{{ server_name }}</a>
+            <a href="/">{{ server_name }}</a>
         </div>
         <div class="links">
             <a href="/">Library</a>

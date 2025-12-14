@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ gallery.title }}</title>
     <style>
         body { 
@@ -26,27 +26,42 @@
             border-bottom: 1px solid #333;
             height: 40px;
             flex-shrink: 0;
+            gap: 15px; 
         }
-        .header-title { font-weight: bold; color: #fff; }
+        .header-title { 
+            font-weight: bold; 
+            color: #fff; 
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+            flex: 1; 
+            min-width: 0; 
+        }
         .btn { 
             background: #333; color: white; border: none; padding: 5px 12px; 
             border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 0.9rem;
+            flex-shrink: 0; 
+            white-space: nowrap;
         }
         .btn:hover { background: #555; }
 
         /* IMAGE AREA */
         #viewer {
             flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start; 
+            display: flex; /* We keep Flexbox */
+            /* REMOVED: justify-content and align-items (This caused the scrolling bug) */
             overflow: auto;
             position: relative;
+            scroll-behavior: auto; 
         }
 
         #page-img {
             display: block;
-            max-width: 100%;
+            /* ADDED: margin: auto (This centers the image safely AND allows scrolling) */
+            margin: auto; 
+            max-width: 100%; 
+            max-height: 100%;
         }
 
         /* CLICK ZONES */
@@ -56,6 +71,7 @@
             width: 30%; 
             z-index: 10;
             cursor: pointer;
+            -webkit-tap-highlight-color: transparent; 
         }
         #zone-left { left: 0; }
         #zone-right { right: 0; }
@@ -66,7 +82,8 @@
             padding: 10px;
             text-align: center;
             border-top: 1px solid #333;
-            height: 30px;
+            height: auto;
+            min-height: 40px;
             flex-shrink: 0;
             display: flex;
             justify-content: center;
@@ -77,7 +94,7 @@
         /* JUMP TO PAGE INPUT */
         #curr-page {
             cursor: pointer;
-            padding: 2px 5px;
+            padding: 5px 10px;
             border-radius: 4px;
             transition: background 0.2s;
         }
@@ -93,12 +110,11 @@
             color: white;
             text-align: center;
             border-radius: 4px;
-            padding: 2px;
+            padding: 5px;
             font-size: 1rem;
             font-family: inherit;
         }
         
-        /* Remove arrows/spinners from number input */
         input::-webkit-outer-spin-button,
         input::-webkit-inner-spin-button {
             -webkit-appearance: none;
@@ -107,6 +123,51 @@
         input[type=number] {
             -moz-appearance: textfield;
             appearance: textfield;
+        }
+
+        /* SETTINGS MODAL */
+        #settings-modal {
+            display:none; 
+            position:fixed; 
+            top:50px; 
+            right:20px; 
+            background:#2d2d2d; 
+            padding:15px; 
+            border-radius:8px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
+            z-index: 100;
+        }
+
+        /* --- MOBILE OPTIMIZATIONS --- */
+        @media (max-width: 768px) {
+            header { padding: 5px 10px; gap: 10px; }
+            .header-title { font-size: 0.9rem; }
+            header .btn { padding: 8px 10px; }
+
+            footer { padding: 10px; gap: 10px; }
+            footer .btn {
+                padding: 12px 0;
+                font-size: 1rem;
+                flex: 1; 
+                max-width: 100px;
+            }
+
+            #settings-modal {
+                top: 50% !important;
+                left: 50% !important;
+                right: auto !important;
+                transform: translate(-50%, -50%);
+                width: 70%;
+                max-width: 300px;
+                text-align: center;
+            }
+            #settings-modal select {
+                padding: 10px;
+                font-size: 1rem;
+                width: 100%;
+            }
+
+            #page-input { font-size: 16px !important; }
         }
     </style>
 </head>
@@ -135,13 +196,13 @@
         <div id="zone-right" class="click-zone" onclick="goRight()"></div>
     </div>
 
-<footer>
+    <footer>
         <button class="btn" onclick="prevPage()">Prev</button>
-        <span>Page <span id="curr-page" onclick="enablePageInput()">1</span> / <span id="total-pages">?</span></span>
+        <span style="white-space: nowrap;">Page <span id="curr-page" onclick="enablePageInput()">1</span> / <span id="total-pages">?</span></span>
         <button class="btn" onclick="nextPage()">Next</button>
     </footer>
 
-    <div id="settings-modal" style="display:none; position:fixed; top:50px; right:20px; background:#2d2d2d; padding:15px; border-radius:8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 100;">
+    <div id="settings-modal">
         <h4 style="margin-top:0;">Reader Settings</h4>
         
         <div style="margin-bottom:10px;">
@@ -152,6 +213,8 @@
                 <option value="original">Original Size</option>
             </select>
         </div>
+        
+        <button class="btn" style="width:100%; margin-top:10px; background:#444;" onclick="toggleSettings()">Close</button>
     </div>
 
     <script>
@@ -171,36 +234,58 @@
         
         let currentPage = startPage;
 
-        // LOAD SAVED SETTINGS
-        let settings = JSON.parse(localStorage.getItem('readerSettings')) || { fit: 'height' };
-        document.getElementById('fit-mode').value = settings.fit;
+        // --- ALWAYS AUTO DETECT ON LOAD ---
+        // 1. Force detection every time page loads (no localStorage)
+        let defaultFit = 'height';
+        
+        // If screen is Taller than it is Wide (Portrait/Phone) -> Fit Width
+        if (window.innerHeight > window.innerWidth) {
+            defaultFit = 'width'; 
+        } else {
+            defaultFit = 'height';
+        }
+
+        // Set the dropdown
+        document.getElementById('fit-mode').value = defaultFit;
 
         function applySettings() {
             const fit = document.getElementById('fit-mode').value;
             const img = document.getElementById('page-img');
             
+            // RESET ALL CONSTRAINTS
+            img.style.width = '';
+            img.style.height = '';
+            img.style.maxWidth = '';
+            img.style.maxHeight = '';
+
             if (fit === 'width') {
+                // FORCE WIDTH, UNCAP HEIGHT (Allow Scrolling)
                 img.style.width = '100%';
-                img.style.height = 'auto';
-            } else if (fit === 'height') {
-                img.style.width = 'auto';
+                img.style.height = 'auto'; // Maintain aspect ratio
+                img.style.maxWidth = 'none'; // Allow growing beyond container
+                img.style.maxHeight = 'none'; // CRITICAL: Allow growing taller than screen
+            } 
+            else if (fit === 'height') {
+                // FORCE HEIGHT, UNCAP WIDTH (Center with black bars)
                 img.style.height = '100%';
-            } else {
+                img.style.width = 'auto'; // Maintain aspect ratio
+                img.style.maxHeight = '100%'; // Cap at screen height
+                img.style.maxWidth = 'none'; // Allow growing wider if needed (rare)
+            } 
+            else {
+                // ORIGINAL
                 img.style.width = 'auto';
                 img.style.height = 'auto';
+                img.style.maxWidth = 'none';
+                img.style.maxHeight = 'none';
             }
-            settings.fit = fit;
-            localStorage.setItem('readerSettings', JSON.stringify(settings));
         }
 
         // --- JUMP TO PAGE LOGIC ---
         function enablePageInput() {
             const span = document.getElementById('curr-page');
-            
-            // Prevent double-clicking creating nested inputs
             if (span.querySelector('input')) return;
 
-            // Create Input
             const input = document.createElement('input');
             input.type = 'number';
             input.id = 'page-input';
@@ -208,28 +293,21 @@
             input.min = 1;
             input.max = totalPages;
 
-            // Handle Enter Key
             input.onkeydown = function(e) {
                 if (e.key === 'Enter') {
                     commitPageJump(this.value);
                 } else if (e.key === 'Escape') {
                     cancelPageInput();
                 }
-                // Stop event bubbling so "ArrowLeft/Right" doesn't change pages while typing
                 e.stopPropagation(); 
             };
 
-            // Handle Click Away (Blur) -> Cancel
             input.onblur = function() {
-                // Optional: You could make this commit instead of cancel
                 cancelPageInput();
             };
 
-            // Swap HTML
             span.innerHTML = '';
             span.appendChild(input);
-            
-            // Focus and Select All text
             input.focus();
             input.select();
         }
@@ -238,24 +316,19 @@
             let num = parseInt(val);
             if (!isNaN(num) && num >= 1 && num <= totalPages) {
                 loadPage(num); 
-                // Note: loadPage() automatically resets the innerText of 'curr-page', 
-                // removing the input box for us.
             } else {
                 cancelPageInput();
             }
         }
 
         function cancelPageInput() {
-            // Just revert text to current page
             document.getElementById('curr-page').innerText = currentPage;
         }
 
         async function loadPage(num) {
             if (num < 1) return;
             
-            // If we try to go PAST the last page, return to source
             if (num > totalPages) {
-                // Click the back button programmatically to go to correct parent
                 document.querySelector('header .btn').click();
                 return;
             }
@@ -265,6 +338,8 @@
             
             const img = document.getElementById('page-img');
             img.src = `/api/read/${GALLERY_ID}/${currentPage}`;
+            
+            // Reset scroll on page turn
             document.getElementById('viewer').scrollTop = 0;
 
             try {
