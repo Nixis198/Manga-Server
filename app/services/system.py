@@ -112,4 +112,89 @@ class SystemService:
             logger.error(f"Network switch failed: {e}")
             return False, f"Switch failed: {e}"
 
+    def shutdown_host(self):
+        if MOCK_MODE: return True, "Simulated Shutdown initiated."
+        
+        try:
+            # We use 'systemctl poweroff' because we mapped the systemd socket in docker-compose
+            subprocess.run(["sudo", "systemctl", "poweroff"], check=True)
+            return True, "System is shutting down..."
+        except Exception as e:
+            logger.error(f"Shutdown failed: {e}")
+            return False, str(e)
+
+    def scan_wifi(self):
+        if MOCK_MODE: 
+            return [
+                {"ssid": "Hotel_Guest", "signal": 90, "security": "WPA2"},
+                {"ssid": "Coffee_Shop", "signal": 40, "security": "OPEN"},
+            ]
+        
+        try:
+            # Force a rescan first
+            subprocess.run(["sudo", "nmcli", "device", "wifi", "rescan"], check=False)
+            time.sleep(2)
+            
+            # Get list (SSID, Signal, Security)
+            # -t = terse (colon separated), -f = fields
+            cmd = ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            
+            networks = []
+            seen = set()
+            
+            for line in res.stdout.splitlines():
+                # nmcli escapes colons as '\:', which makes splitting by ':' hard.
+                # For simplicity, we assume standard SSIDs.
+                parts = line.split(":")
+                if len(parts) >= 3:
+                    ssid = parts[0]
+                    # Filter out empty SSIDs and duplicates
+                    if ssid and ssid not in seen:
+                        seen.add(ssid)
+                        networks.append({
+                            "ssid": ssid, 
+                            "signal": int(parts[1]) if parts[1].isdigit() else 0, 
+                            "security": parts[2]
+                        })
+            
+            # Sort by signal strength
+            return sorted(networks, key=lambda x: x['signal'], reverse=True)
+        except Exception as e:
+            logger.error(f"Wifi scan failed: {e}")
+            return []
+
+    def connect_new_wifi(self, ssid, password):
+        if MOCK_MODE: return True, "Simulated connection update."
+        
+        try:
+            logger.info(f"Updating Client configuration for: {ssid}")
+            
+            # 1. Delete the OLD 'MangaClient' profile
+            subprocess.run(["sudo", "nmcli", "con", "delete", "MangaClient"], check=False)
+            
+            # 2. Create the NEW 'MangaClient' profile
+            subprocess.run([
+                "sudo", "nmcli", "con", "add", 
+                "type", "wifi", 
+                "ifname", "wlan0", 
+                "con-name", "MangaClient", 
+                "ssid", ssid
+            ], check=True)
+            
+            # 3. Add Password (if provided)
+            if password:
+                subprocess.run([
+                    "sudo", "nmcli", "con", "modify", "MangaClient", 
+                    "wifi-sec.key-mgmt", "wpa-psk", 
+                    "wifi-sec.psk", password
+                ], check=True)
+                
+            # Note: We do NOT switch to it immediately. We let the user click "Switch to Client Mode"
+            # or let the Watchdog handle it. This prevents cutting the user off mid-request.
+            return True, f"Saved configuration for '{ssid}'. You can now switch to Client Mode."
+            
+        except subprocess.CalledProcessError as e:
+            return False, str(e)
+
 manager = SystemService()

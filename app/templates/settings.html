@@ -67,12 +67,28 @@
                             Current IP: <span id="net_ip" style="font-family: monospace; color: white;">...</span>
                         </div>
                         
-                        <button onclick="toggleHotspot()" id="btn_hotspot" class="btn-save" style="background: #e67e22; width: 100%;">
-                            Switch to Hotspot Mode
-                        </button>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button onclick="toggleHotspot()" id="btn_hotspot" class="btn-save" style="background: #e67e22; flex: 1; margin: 0;">
+                                Switch to Hotspot Mode
+                            </button>
+                            <button onclick="openWifiModal()" class="btn-save" style="background: #34495e; flex: 1; margin: 0;">
+                                Scan Wi-Fi
+                            </button>
+                        </div>
                         <p style="font-size: 0.8rem; color: #888; margin-top: 10px; line-height: 1.4;">
                             <strong>Warning:</strong> Switching modes will disconnect you. You will need to reconnect to the new network manually.
                         </p>
+                    </div>
+                    <hr style="border-color:#444; margin: 20px 0;">
+            
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <label style="color:#e74c3c; font-weight:bold;">Power Control</label>
+                            <div class="help-text">Safely shut down the Raspberry Pi</div>
+                        </div>
+                        <button onclick="shutdownSystem()" style="background:#c0392b; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer; font-weight:bold;">
+                            Shutdown System
+                        </button>
                     </div>
                 </div>
             </div>
@@ -175,6 +191,27 @@
         </div>
     </div>
 
+</div>
+
+<div id="wifi-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
+    <div style="background:#2d2d2d; padding:20px; border-radius:8px; width:400px; max-width:90%; max-height:80vh; display:flex; flex-direction:column;">
+        <h2 style="margin-top:0;">Connect to Wi-Fi</h2>
+           
+        <div id="wifi-list" style="overflow-y:auto; flex:1; border:1px solid #444; margin-bottom:15px; min-height:150px;">
+            <div style="padding:20px; text-align:center; color:#888;">Scanning...</div>
+        </div>
+
+        <div id="wifi-form" style="display:none;">
+            <div style="margin-bottom:10px; font-weight:bold; color:var(--accent);" id="selected-ssid"></div>
+            <input type="password" id="wifi-pass" placeholder="Password (leave empty if Open)" style="width:100%; padding:10px; margin-bottom:10px; background:#1a1a1a; border:1px solid #444; color:white;">
+            <div style="display:flex; gap:10px;">
+                <button onclick="saveWifi()" class="btn-save" style="margin:0;">Connect</button>
+                <button onclick="backToList()" style="background:#555; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer;">Back</button>
+            </div>
+        </div>
+
+        <button id="btn-cancel-wifi" onclick="document.getElementById('wifi-modal').style.display='none'" style="margin-top:10px; background:transparent; border:none; color:#888; cursor:pointer; text-decoration:underline;">Cancel</button>
+    </div>
 </div>
 
 <style>
@@ -608,6 +645,135 @@
         } catch (e) {
             // Expected to fail because connection drops instantly
             alert("Command sent! Connection dropping...");
+        }
+    }
+
+    async function shutdownSystem() {
+        if (!confirm("⚠️ SHUTDOWN WARNING ⚠️\n\nAre you sure you want to turn off the Raspberry Pi?\n\nYou will need to physically unplug it and plug it back in to turn it on again.")) {
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/system/shutdown', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ confirm: true })
+            });
+            
+            if (res.ok) {
+                document.body.innerHTML = `
+                    <div style="display:flex; justify-content:center; align-items:center; height:100vh; background:#1a1a1a; color:white; flex-direction:column; text-align:center;">
+                        <h1 style="color:#e74c3c;">System Shutting Down</h1>
+                        <p>It is now safe to unplug the power when the green light stops flashing.</p>
+                    </div>
+                `;
+            } else {
+                alert("Shutdown failed. Check logs.");
+            }
+        } catch (e) {
+            alert("Error sending shutdown command.");
+        }
+    }
+
+    let selectedSSID = "";
+
+    async function openWifiModal() {
+        document.getElementById('wifi-modal').style.display = 'flex';
+        document.getElementById('wifi-form').style.display = 'none';
+        document.getElementById('wifi-list').style.display = 'block';
+        document.getElementById('btn-cancel-wifi').style.display = 'block';
+        document.getElementById('wifi-list').innerHTML = '<div style="padding:20px; text-align:center; color:#888;">Scanning networks...<br>(This may take 5-10 seconds)</div>';
+        
+        try {
+            const res = await fetch('/api/system/wifi/scan');
+            const networks = await res.json();
+            
+            const list = document.getElementById('wifi-list');
+            list.innerHTML = '';
+            
+            if (networks.length === 0) {
+                list.innerHTML = '<div style="padding:10px;">No networks found.</div>';
+                return;
+            }
+
+            networks.forEach(net => {
+                const item = document.createElement('div');
+                item.style.padding = "10px";
+                item.style.borderBottom = "1px solid #444";
+                item.style.cursor = "pointer";
+                item.style.display = "flex";
+                item.style.justifyContent = "space-between";
+                
+                // Signal bars roughly
+                let bars = "▂";
+                if(net.signal > 40) bars += "▄";
+                if(net.signal > 70) bars += "▆";
+                if(net.signal > 90) bars += "█";
+
+                item.innerHTML = `
+                    <div style="font-weight:bold;">${net.ssid}</div>
+                    <div style="color:#888; font-size:0.8em;">${bars} ${net.security}</div>
+                `;
+                
+                item.onclick = () => showPassForm(net.ssid);
+                item.onmouseover = () => item.style.backgroundColor = "#333";
+                item.onmouseout = () => item.style.backgroundColor = "transparent";
+                
+                list.appendChild(item);
+            });
+        } catch(e) {
+            document.getElementById('wifi-list').innerHTML = '<div style="color:red; padding:10px;">Scan failed.</div>';
+        }
+    }
+
+    function showPassForm(ssid) {
+        selectedSSID = ssid;
+        document.getElementById('wifi-list').style.display = 'none';
+        document.getElementById('btn-cancel-wifi').style.display = 'none';
+        document.getElementById('wifi-form').style.display = 'block';
+        document.getElementById('selected-ssid').innerText = `Selected: ${ssid}`;
+        document.getElementById('wifi-pass').value = '';
+        document.getElementById('wifi-pass').focus();
+    }
+
+    function backToList() {
+        document.getElementById('wifi-form').style.display = 'none';
+        document.getElementById('wifi-list').style.display = 'block';
+        document.getElementById('btn-cancel-wifi').style.display = 'block';
+    }
+
+    async function saveWifi() {
+        const pass = document.getElementById('wifi-pass').value;
+        const btn = document.querySelector('#wifi-form .btn-save');
+        const originalText = btn.innerText;
+        
+        btn.disabled = true;
+        btn.innerText = "Saving...";
+
+        try {
+            const res = await fetch('/api/system/wifi/connect', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ ssid: selectedSSID, password: pass })
+            });
+            
+            const data = await res.json();
+            
+            if(res.ok) {
+                alert(data.message);
+                document.getElementById('wifi-modal').style.display = 'none';
+                // Automatically prompt to switch modes?
+                if(confirm("New Wi-Fi saved. Switch to Client Mode now?")) {
+                    toggleHotspot(false); // Switch to client
+                }
+            } else {
+                alert("Error: " + data.detail);
+            }
+        } catch(e) {
+            alert("Failed to save connection.");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
         }
     }
 

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from . import database, schemas
 from .services import scanner, importer, reader, system
 from .plugins import manager
+from .services.system import manager as system_service
 
 # --- CONFIGURATION ---
 DATA_DIR = os.getenv("DATA_DIR", "./data")
@@ -777,4 +778,35 @@ def toggle_hotspot(payload: dict):
     success, msg = system.manager.toggle_hotspot(enable)
     if not success:
         raise HTTPException(500, detail=msg)
+    return {"status": "success", "message": msg}
+
+@app.post("/api/system/shutdown")
+def shutdown_system(payload: dict, db: Session = Depends(get_db)):
+    # Simple security check: require a confirmation flag
+    if not payload.get("confirm"):
+        raise HTTPException(400, "Confirmation required")
+        
+    success, msg = system_service.shutdown_host()
+    if not success:
+        raise HTTPException(500, msg)
+        
+    return {"status": "success", "message": msg}
+
+# --- WIFI ENDPOINTS ---
+
+@app.get("/api/system/wifi/scan")
+def scan_wifi_networks(db: Session = Depends(get_db)):
+    networks = system_service.scan_wifi()
+    return networks
+
+@app.post("/api/system/wifi/connect")
+def connect_wifi_network(payload: dict, db: Session = Depends(get_db)):
+    ssid = payload.get("ssid")
+    password = payload.get("password", "")
+    
+    if not ssid: raise HTTPException(400, "SSID required")
+    
+    success, msg = system_service.connect_new_wifi(ssid, password)
+    if not success:
+        raise HTTPException(500, msg)
     return {"status": "success", "message": msg}
