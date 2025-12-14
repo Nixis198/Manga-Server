@@ -51,3 +51,6 @@ data/thumbnails/*
 
 data/logs/*
 !data/logs/.gitkeep
+
+data/backups/*
+!data/backups/.gitkeep
