@@ -22,7 +22,6 @@
         <h3>Series Settings</h3>
         
         <div class="settings-content">
-            
             <div class="settings-cover">
                 <img id="setting-preview-img" src="{{ cover_url }}">
             </div>
@@ -127,6 +126,7 @@
         <div class="ctx-item" onclick="openEditModal()">Edit Metadata</div>
         <div class="ctx-item" onclick="markAsReadCtx()">Mark as Read</div>
         <div class="ctx-item" onclick="downloadGalleryFromCtx()">Download</div>
+        <div class="ctx-item" onclick="deleteGalleryCtx()" style="color: #e74c3c;">Delete</div>
     </div>
 
     <div id="edit-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
@@ -218,7 +218,7 @@
         background: #1a1a1a;
         border: 1px solid #444;
         color: white;
-        box-sizing: border-box; /* Fix width issues */
+        box-sizing: border-box; 
     }
 
     .settings-actions {
@@ -244,7 +244,7 @@
     @media (max-width: 768px) {
         .series-container { padding: 10px; }
 
-        /* 2. Header Stack */
+        /* 1. Stack Header Info & Button */
         .header-row {
             flex-direction: column;
             gap: 15px;
@@ -253,7 +253,7 @@
             width: 100%;
         }
 
-        /* 3. Settings Panel Stack */
+        /* 2. Stack Settings Panel */
         .settings-content {
             flex-direction: column;
         }
@@ -270,20 +270,20 @@
             width: 100%;
         }
 
-        /* 4. Grid Fix (2 Columns) */
+        /* 3. Grid: 2 Columns on Mobile */
         .grid {
             grid-template-columns: repeat(2, 1fr) !important;
             gap: 10px !important;
         }
 
-        /* 5. Thumbnails Aspect Ratio */
+        /* 4. Fix Thumbnail Aspect Ratio */
         .card img {
             height: auto !important;
             aspect-ratio: 2 / 3;
             object-fit: cover;
         }
-
-        /* 6. Smaller Fonts */
+        
+        /* 5. Smaller Fonts */
         h1 { font-size: 1.5rem !important; }
         .card-title { font-size: 0.85rem !important; }
         .card-artist { font-size: 0.75rem !important; }
@@ -293,6 +293,9 @@
 
 <script>
     // --- VARIABLES ---
+    // LINTER FIX: define ID as a string first
+    const SERIES_ID = "{{ series.id }}";
+    
     let sortableInstance = null;
     let initialOrder = []; 
     const gridEl = document.getElementById('series-grid');
@@ -344,8 +347,8 @@
         const thumb = document.getElementById('inp_thumb').value;
         const desc = document.getElementById('inp_desc').value;
 
-        // FIXED: Quotes around ID to satisfy linter
-        const res = await fetch(`/api/series/{{ series.id }}/update`, {
+        // FIXED: Use backticks and the variable to keep linter happy
+        const res = await fetch(`/api/series/${SERIES_ID}/update`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ name: name, thumbnail_url: thumb, description: desc })
@@ -425,8 +428,8 @@
             idList.push(parseInt(card.dataset.id));
         });
 
-        // FIXED: Quotes around ID to satisfy linter
-        const res = await fetch(`/api/series/{{ series.id }}/update`, {
+        // FIXED: Use backticks and variable
+        const res = await fetch(`/api/series/${SERIES_ID}/update`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ order: idList })
@@ -462,6 +465,29 @@
     function downloadGalleryFromCtx() {
         if(selectedGallery) {
             window.location.href = `/api/download/${selectedGallery.id}`;
+        }
+    }
+
+    async function deleteGalleryCtx() {
+        if(!selectedGallery) return;
+        if(!confirm("Are you sure you want to delete this gallery?\nThis will permanently remove the file.")) return;
+        
+        try {
+            const res = await fetch(`/api/gallery/${selectedGallery.id}`, { method: 'DELETE' });
+            const data = await res.json();
+            
+            if(res.ok) {
+                if (data.series_deleted) {
+                    alert("Series is empty and has been deleted.");
+                    window.location.href = "/";
+                } else {
+                    location.reload();
+                }
+            } else {
+                alert("Failed to delete.");
+            }
+        } catch(e) {
+            alert("Error deleting.");
         }
     }
 
