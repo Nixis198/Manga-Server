@@ -310,10 +310,6 @@
             width: 100%;
         }
 
-        /* FIX: Only hide the "Empty State" message on mobile.
-           We do NOT force editor-area to flex here anymore.
-           It will stay hidden until JS enables it.
-        */
         .empty-state {
             display: none; 
         }
@@ -370,11 +366,9 @@
         const emptyState = document.getElementById('empty-state');
         if(emptyState) emptyState.style.display = 'none';
         
-        // --- REVEAL EDITOR ---
         const editor = document.getElementById('editor-area');
         editor.style.display = 'flex';
         
-        // Auto-scroll on mobile
         if (window.innerWidth <= 768) {
              editor.scrollIntoView({ behavior: 'smooth' });
         }
@@ -385,21 +379,49 @@
 
         document.getElementById('inp_id').value = id;
         
-        // Auto-fill inputs
-        let title = file.filename;
+        // --- AUTO-FILL LOGIC ---
+        let title = "";
         let artist = "";
-        const match = title.match(/^\[(.*?)\]\s*(.*?)(\.zip|\.cbz)?$/);
-        if (match) {
-            artist = match[1];
-            title = match[2];
-            title = title.replace(/\s*\(.*?\)\s*/g, '').trim();
-        } else {
-            title = title.replace(/\.(zip|cbz)$/i, '');
+        
+        // 1. Try to read from inside the ZIP first (Priority)
+        try {
+            const peekRes = await fetch(`/api/staged/${id}/peek`);
+            if (peekRes.ok) {
+                const peekData = await peekRes.json();
+                const innerName = peekData.filename;
+                
+                if (innerName) {
+                    // Regex for: [Circle (Artist)] Title - XXX
+                    // Matches:
+                    // Group 1: Artist (if inside parens)
+                    // Group 2: Artist (if no parens in brackets)
+                    // Group 3: Title (before hyphen number)
+                    const innerMatch = innerName.match(/^\[(?:.*?\((.*?)\)|(.*?))\]\s*(.*?)\s*-\s*\d+/);
+                    if (innerMatch) {
+                        artist = innerMatch[1] || innerMatch[2]; 
+                        title = innerMatch[3];
+                    }
+                }
+            }
+        } catch(e) { console.log("Peek failed", e); }
+
+        // 2. Fallback to ZIP Filename if peek failed or returned no match
+        if (!title) {
+             const zipName = file.filename;
+             const match = zipName.match(/^\[(.*?)\]\s*(.*?)(\.zip|\.cbz)?$/);
+             if (match) {
+                 artist = match[1];
+                 title = match[2];
+                 title = title.replace(/\s*\(.*?\)\s*/g, '').trim(); 
+             } else {
+                 title = zipName.replace(/\.(zip|cbz)$/i, '');
+             }
         }
 
+        // Fill Inputs
         const titleInput = document.getElementById('inp_title');
-        titleInput.value = title;
-        document.getElementById('inp_artist').value = artist;
+        titleInput.value = title ? title.trim() : "";
+        document.getElementById('inp_artist').value = artist ? artist.trim() : "";
         document.getElementById('inp_series').value = "";
         document.getElementById('inp_tags').value = "";
         document.getElementById('inp_desc').value = "";
@@ -439,7 +461,6 @@
             const val = input.value;
             if (!val || input.dataset.backspacing === "true") return;
             
-            // Find match (Case Insensitive)
             const match = dataSource.find(item => item.toLowerCase().startsWith(val.toLowerCase()));
             
             if (match) {
