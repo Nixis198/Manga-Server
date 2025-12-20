@@ -325,6 +325,26 @@ def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "updated"}
 
+# --- NEW ENDPOINT TO PEEK INSIDE ZIP ---
+@app.get("/api/staged/{file_id}/peek")
+def peek_staged_file(file_id: int, db: Session = Depends(get_db)):
+    """Opens the ZIP and returns the first image filename found."""
+    staged = db.query(database.StagedFile).filter(database.StagedFile.id == file_id).first()
+    if not staged: raise HTTPException(404, "Not found")
+    
+    try:
+        with zipfile.ZipFile(str(staged.path), 'r') as zf:
+            file_list = zf.namelist()
+            # Find images
+            images = [f for f in file_list if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+            images.sort()
+            if images:
+                # Return the base filename (no folders) for easier regex matching on frontend
+                return {"filename": os.path.basename(images[0])}
+    except Exception:
+        pass
+    return {"filename": ""}
+
 # --- UPDATE METADATA (WITH FILE MOVING) ---
 
 @app.post("/api/gallery/{gallery_id}/update")
