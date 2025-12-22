@@ -325,6 +325,7 @@
     async function loadFiles() {
         const res = await fetch('/api/staged');
         stagedFiles = await res.json();
+        stagedFiles.sort((a, b) => a.filename.localeCompare(b.filename));
         renderList();
     }
 
@@ -391,11 +392,6 @@
                 const innerName = peekData.filename;
                 
                 if (innerName) {
-                    // Regex for: [Circle (Artist)] Title - XXX
-                    // Matches:
-                    // Group 1: Artist (if inside parens)
-                    // Group 2: Artist (if no parens in brackets)
-                    // Group 3: Title (before hyphen number)
                     const innerMatch = innerName.match(/^\[(?:.*?\((.*?)\)|(.*?))\]\s*(.*?)\s*-\s*\d+/);
                     if (innerMatch) {
                         artist = innerMatch[1] || innerMatch[2]; 
