@@ -54,7 +54,7 @@
         </div>
 
         <div style="display:flex; gap:10px; margin-bottom:10px;">
-            <div style="flex:1;">
+            <div style="flex:1;" id="div-edit-category">
                 <label style="display:block; color:#aaa; font-size:0.8rem;">Category</label>
                 <select id="edit_category" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
                     <option value="">(None)</option>
@@ -316,7 +316,7 @@
         }
     }
 
-    // --- RENDER GRID (Updated to include Data Attributes for Context Menu) ---
+    // --- RENDER GRID ---
     function renderGrid(items) {
         const grid = document.getElementById('library-grid');
         grid.innerHTML = '';
@@ -349,7 +349,7 @@
             if(isSeries) card.classList.add('series-card'); // Helper class
             card.onclick = () => window.location.href = href;
 
-            // --- CRITICAL: Add Data Attributes for Context Menu ---
+            // Add Data Attributes
             card.dataset.id = item.id;
             card.dataset.title = item.title;
             card.dataset.artist = item.artist || '';
@@ -463,13 +463,17 @@
         document.getElementById('edit_tags').value = selectedItem.dataset.tags;
         document.getElementById('edit_desc').value = selectedItem.dataset.desc;
 
-        // Toggle Series Input
+        // Toggle Inputs based on Type
         const seriesDiv = document.getElementById('div-edit-series');
+        const catDiv = document.getElementById('div-edit-category');
+        
         if (selectedItem.type === 'series') {
             seriesDiv.style.display = 'none'; 
+            catDiv.style.display = 'none';  // <--- HIDE CATEGORY FOR SERIES
             document.getElementById('modal-title').innerText = "Edit Series Metadata";
         } else {
             seriesDiv.style.display = 'block';
+            catDiv.style.display = 'block';
             document.getElementById('modal-title').innerText = "Edit Gallery Metadata";
             document.getElementById('edit_series_name').value = selectedItem.dataset.series || ""; 
         }
@@ -496,6 +500,7 @@
         
         if (type === 'series') {
             payload.name = payload.title; // Series uses 'name'
+            // We do NOT send category for series updates anymore
             await fetch(`/api/series/${id}/update`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
