@@ -135,6 +135,14 @@ def get_series_cover(series):
     if series.thumbnail_url: return series.thumbnail_url
     return f"/thumbnails/{sorted_gals[0].id}.jpg"
 
+def get_series_category_name(series):
+    """ Calculates the inherited category for a series based on its contents """
+    if not series.galleries: return None
+    # Pick the first gallery that has a category
+    for g in series.galleries:
+        if g.category: return g.category.name
+    return None
+
 def build_search_string(title, artist, extra_list=None):
     terms = [title, artist]
     if extra_list: terms.extend(extra_list)
@@ -206,6 +214,7 @@ def get_library(search: str = "", category: str = "all", filter_type: str = "all
     items = []
     search = search.lower()
     
+    # 1. BOOKS
     if filter_type in ["all", "books"]:
         g_query = db.query(database.Gallery).filter(database.Gallery.series_id == None)
         if category != "all" and category != "uncategorized":
@@ -223,15 +232,25 @@ def get_library(search: str = "", category: str = "all", filter_type: str = "all
                 "series": "", "tags": [t.name for t in g.tags], "description": g.description or "", "created_at": g.id 
             })
 
+    # 2. SERIES (Inherited Categories)
     if filter_type in ["all", "series"]:
         s_query = db.query(database.Series)
-        if category != "all" and category != "uncategorized":
-            if category.isdigit(): s_query = s_query.filter(database.Series.category_id == int(category))
-        elif category == "uncategorized":
-            s_query = s_query.filter(database.Series.category_id == None)
+        
+        # --- NEW INHERITANCE LOGIC ---
+        if category != "all":
+            # Join with Gallery to filter based on contents
+            s_query = s_query.join(database.Gallery)
+            
+            if category == "uncategorized":
+                s_query = s_query.filter(database.Gallery.category_id == None)
+            elif category.isdigit():
+                s_query = s_query.filter(database.Gallery.category_id == int(category))
+            
+            s_query = s_query.distinct()
             
         for s in s_query.all():
             if not s.galleries: continue
+            
             child_tags = []
             child_titles = []
             for g in s.galleries:
@@ -243,10 +262,14 @@ def get_library(search: str = "", category: str = "all", filter_type: str = "all
 
             read_count = sum(1 for g in s.galleries if g.status == "Completed")
             any_progress = any(g.status != "New" for g in s.galleries)
+            
+            # Derived Category
+            cat_name = get_series_category_name(s) or "Series"
 
             items.append({
                 "type": "series", "id": s.id, "title": s.name, "artist": s.artist or "Various",
-                "status": f"{len(s.galleries)} Items", "category": s.category.name if s.category else "Series",
+                "status": f"{len(s.galleries)} Items", 
+                "category": cat_name, # Inherited name
                 "thumb": get_series_cover(s), "count": len(s.galleries), "read_count": read_count,
                 "is_new": not any_progress, "series": s.name, "tags": sorted(list(set(child_tags))),
                 "description": s.description or "", "created_at": s.id
@@ -264,17 +287,21 @@ def view_series_page(series_id: int, request: Request, db: Session = Depends(get
     display_tags = []
     for g in galleries:
         for t in g.tags: display_tags.append(t.name)
+        
+    # Calculate inherited category for display
+    series_category = get_series_category_name(series)
     
     return templates.TemplateResponse("series.html", {
         "request": request, "series": series, "galleries": galleries,
-        "cover_url": get_series_cover(series), "display_tags": sorted(list(set(display_tags)))
+        "cover_url": get_series_cover(series), "display_tags": sorted(list(set(display_tags))),
+        "series_category": series_category # Pass derived category
     })
 
 @app.get("/reader/{gallery_id}", response_class=HTMLResponse)
 def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)):
     gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
     if not gallery: raise HTTPException(404, "Gallery not found")
-    if gallery.status == "New": # type: ignore
+    if gallery.status == "New":  # type: ignore
         gallery.status = "Reading" # type: ignore
         db.commit()
     return templates.TemplateResponse("reader.html", {"request": request, "gallery": gallery})
@@ -293,6 +320,19 @@ def scan_input_folder(): return scanner.scan_input_directory(INPUT_DIR)
 
 @app.get("/api/staged")
 def get_staged_files(db: Session = Depends(get_db)): return db.query(database.StagedFile).all()
+
+@app.get("/api/staged/{file_id}/peek")
+def peek_staged_file(file_id: int, db: Session = Depends(get_db)):
+    staged = db.query(database.StagedFile).filter(database.StagedFile.id == file_id).first()
+    if not staged: raise HTTPException(404, "Not found")
+    try:
+        with zipfile.ZipFile(str(staged.path), 'r') as zf:
+            file_list = zf.namelist()
+            images = [f for f in file_list if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+            images.sort()
+            if images: return {"filename": os.path.basename(images[0])}
+    except Exception: pass
+    return {"filename": ""}
 
 @app.get("/api/staged/{file_id}/cover")
 def get_staged_cover_img(file_id: int, db: Session = Depends(get_db)):
@@ -324,26 +364,6 @@ def update_progress(gallery_id: int, page: int, db: Session = Depends(get_db)):
     else: g.status = "New" # type: ignore
     db.commit()
     return {"status": "updated"}
-
-# --- NEW ENDPOINT TO PEEK INSIDE ZIP ---
-@app.get("/api/staged/{file_id}/peek")
-def peek_staged_file(file_id: int, db: Session = Depends(get_db)):
-    """Opens the ZIP and returns the first image filename found."""
-    staged = db.query(database.StagedFile).filter(database.StagedFile.id == file_id).first()
-    if not staged: raise HTTPException(404, "Not found")
-    
-    try:
-        with zipfile.ZipFile(str(staged.path), 'r') as zf:
-            file_list = zf.namelist()
-            # Find images
-            images = [f for f in file_list if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-            images.sort()
-            if images:
-                # Return the base filename (no folders) for easier regex matching on frontend
-                return {"filename": os.path.basename(images[0])}
-    except Exception:
-        pass
-    return {"filename": ""}
 
 # --- UPDATE METADATA (WITH FILE MOVING) ---
 
@@ -405,24 +425,12 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
     s = db.query(database.Series).filter(database.Series.id == series_id).first()
     if not s: raise HTTPException(404, "Series not found")
     
-    # Track changes for file moving
-    old_name = s.name
-    
     if "name" in payload: s.name = payload["name"]
     if "thumbnail_url" in payload: s.thumbnail_url = payload["thumbnail_url"]
     if "artist" in payload: s.artist = payload["artist"]
     if "description" in payload: s.description = payload["description"]
     
-    if "category" in payload:
-        c_name = payload["category"]
-        if c_name:
-            c = db.query(database.Category).filter(database.Category.name == c_name).first()
-            if not c:
-                c = database.Category(name=c_name)
-                db.add(c)
-            s.category = c
-        else:
-            s.category = None
+    # REMOVED: Category manual update logic. Series now inherit category from children.
 
     if "tags" in payload:
         s.tags.clear()
@@ -440,17 +448,9 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
             g = db.query(database.Gallery).filter(database.Gallery.id == g_id).first()
             if g and g.series_id == s.id: g.sort_order = idx + 1 # type: ignore
 
-    # 5. BATCH MOVE FILES (If Series Name or Artist changed)
-    # If the user renamed the Series, we must move ALL books in it to the new folder name
     if "name" in payload or "artist" in payload:
         new_series_name = s.name
-        # Note: Series artist overrides gallery artist in folder structure usually, 
-        # but here we stick to Gallery Artist for the root folder.
-        # If we assume files are organized like: Artist / Series / File
-        # Then we iterate all galleries and move them.
         for g in s.galleries:
-            # We use the gallery's current artist (or new one if we updated it elsewhere, but here we keep g.artist)
-            # and the NEW series name.
             move_gallery_file(g, g.artist, new_series_name)
 
     db.commit()
@@ -498,11 +498,9 @@ def delete_gallery(gallery_id: int, db: Session = Depends(get_db)):
                 db.commit()
                 series_deleted = True
 
-    # Delete Files
     try:
         if os.path.exists(file_path): os.remove(file_path)
         if os.path.exists(thumb_path): os.remove(thumb_path)
-        # Cleanup Empty Dirs
         cleanup_parent_folders(file_path)
     except Exception as e: logger.error(f"Error removing files: {e}")
 

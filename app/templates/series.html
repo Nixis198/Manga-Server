@@ -145,7 +145,7 @@
             </div>
 
             <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <div style="flex:1;">
+                <div style="flex:1;" id="div-edit-category">
                     <label style="display:block; color:#aaa; font-size:0.8rem;">Category</label>
                     <select id="edit_category" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
                         <option value="">(None)</option>
@@ -514,6 +514,11 @@
         document.getElementById('edit_category').value = card.dataset.category;
         document.getElementById('edit_tags').value = card.dataset.tags;
         document.getElementById('edit_desc').value = card.dataset.desc;
+
+        // Hide Category for Series edits (as it is inherited)
+        // Note: This modal is only for galleries in this view, so this check is extra safety
+        const catDiv = document.getElementById('div-edit-category');
+        if (catDiv) catDiv.style.display = 'block';
 
         document.getElementById('edit-modal').style.display = 'flex';
     }
