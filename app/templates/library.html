@@ -11,12 +11,21 @@
                oninput="debounceSearch()">
     </div>
 
-    <div style="margin-bottom: 15px;">
+    <div style="margin-bottom: 15px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
+        
         <div class="toggle-group">
             <button class="toggle-btn active" onclick="setFilterType('all', this)">All</button>
             <button class="toggle-btn" onclick="setFilterType('series', this)">Series</button>
             <button class="toggle-btn" onclick="setFilterType('books', this)">Books</button>
         </div>
+
+        <select id="sort-select" onchange="loadLibrary()" 
+                style="width: 200px; margin-left: auto; padding: 8px; background: #252525; color: white; border: 1px solid #444; border-radius: 4px; cursor: pointer;">
+            <option value="title_asc">Title A-Z</option>
+            <option value="title_desc">Title Z-A</option>
+            <option value="artist_asc">Artist A-Z</option>
+            <option value="artist_desc">Artist Z-A</option>
+        </select>
     </div>
 
     <div id="category-list" style="margin-bottom: 25px; display: flex; flex-wrap: wrap; gap: 8px;">
@@ -296,12 +305,12 @@
 
     async function loadLibrary() {
         const search = document.getElementById('search-input').value;
+        const sort = document.getElementById('sort-select').value; // Added Sort
         const grid = document.getElementById('library-grid');
         grid.style.opacity = '0.5';
 
         try {
-            // No page, no limit, no sort. Just data.
-            const url = `/api/library?search=${encodeURIComponent(search)}&category=${currentCategory}&filter_type=${currentFilterType}`;
+            const url = `/api/library?search=${encodeURIComponent(search)}&category=${currentCategory}&filter_type=${currentFilterType}&sort=${sort}`;
             const res = await fetch(url);
             
             if (!res.ok) throw new Error("API Error");

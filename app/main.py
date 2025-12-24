@@ -221,7 +221,13 @@ def read_root(request: Request):
     return templates.TemplateResponse("library.html", {"request": request})
 
 @app.get("/api/library")
-def get_library(search: str = "", category: str = "all", filter_type: str = "all", db: Session = Depends(get_db)):
+def get_library(
+    search: str = "", 
+    category: str = "all", 
+    filter_type: str = "all", 
+    sort: str = "title_asc",  # Added sort parameter
+    db: Session = Depends(get_db)
+):
     items = []
     search = search.lower()
     
@@ -285,7 +291,16 @@ def get_library(search: str = "", category: str = "all", filter_type: str = "all
                 "description": s.description or "", "created_at": s.id
             })
 
-    items.sort(key=lambda x: x['title'].lower())
+    # SORTING LOGIC
+    if sort == "title_desc":
+        items.sort(key=lambda x: x['title'].lower(), reverse=True)
+    elif sort == "artist_asc":
+        items.sort(key=lambda x: (x['artist'] or "").lower())
+    elif sort == "artist_desc":
+        items.sort(key=lambda x: (x['artist'] or "").lower(), reverse=True)
+    else: # title_asc (default)
+        items.sort(key=lambda x: x['title'].lower())
+
     return {"items": items, "total": len(items)}
 
 @app.get("/series/{series_id}", response_class=HTMLResponse)
@@ -383,11 +398,13 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
     if not gallery: raise HTTPException(404, "Gallery not found")
     
+    # 1. Update basic fields
     gallery.title = request.title # type: ignore
     gallery.artist = request.artist # type: ignore
     gallery.description = request.description # type: ignore
     if request.direction: gallery.reading_direction = request.direction # type: ignore
     
+    # 2. Handle Series Link
     if request.series:
         s = db.query(database.Series).filter(database.Series.name == request.series).first()
         if not s:
@@ -398,6 +415,7 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.series_id = None # type: ignore
 
+    # 3. Handle Category
     if request.category:
         c = db.query(database.Category).filter(database.Category.name == request.category).first()
         if not c:
@@ -408,6 +426,7 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.category_id = None # type: ignore
 
+    # 4. Handle Tags
     gallery.tags.clear()
     for t_name in request.tags:
         t_name = t_name.strip()
@@ -418,6 +437,7 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
             db.add(t)
         gallery.tags.append(t)
         
+    # 5. MOVE FILE ON DISK
     new_artist = gallery.artist
     new_series = request.series if request.series else None
     move_gallery_file(gallery, new_artist, new_series)
@@ -429,6 +449,9 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
 def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(get_db)):
     s = db.query(database.Series).filter(database.Series.id == series_id).first()
     if not s: raise HTTPException(404, "Series not found")
+    
+    # Track changes for file moving
+    old_name = s.name
     
     if "name" in payload: s.name = payload["name"]
     if "thumbnail_url" in payload: s.thumbnail_url = payload["thumbnail_url"]
@@ -454,7 +477,6 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
             if g and g.series_id == s.id: g.sort_order = idx + 1 # type: ignore
 
     # BATCH MOVE FILES (If Series Name changed)
-    # Note: We rely on the galleries' own artist for the path, so we don't change that here.
     if "name" in payload:
         new_series_name = s.name
         for g in s.galleries:
