@@ -137,10 +137,21 @@ def get_series_cover(series):
 def get_series_category_name(series):
     """ Calculates the inherited category for a series based on its contents """
     if not series.galleries: return None
-    # Pick the first gallery that has a category
     for g in series.galleries:
         if g.category: return g.category.name
     return None
+
+def get_series_artist_name(series):
+    """ Calculates the inherited artist. Returns 'Various' if mixed. """
+    if not series.galleries: return "Unknown"
+    
+    artists = set()
+    for g in series.galleries:
+        if g.artist: artists.add(g.artist)
+    
+    if len(artists) == 0: return "Unknown"
+    if len(artists) == 1: return list(artists)[0]
+    return "Various"
 
 def build_search_string(title, artist, extra_list=None):
     terms = [title, artist]
@@ -231,20 +242,17 @@ def get_library(search: str = "", category: str = "all", filter_type: str = "all
                 "series": "", "tags": [t.name for t in g.tags], "description": g.description or "", "created_at": g.id 
             })
 
-    # 2. SERIES (Inherited Categories)
+    # 2. SERIES
     if filter_type in ["all", "series"]:
         s_query = db.query(database.Series)
         
-        # --- NEW INHERITANCE LOGIC ---
+        # Category Filter (via inheritance)
         if category != "all":
-            # Join with Gallery to filter based on contents
             s_query = s_query.join(database.Gallery)
-            
             if category == "uncategorized":
                 s_query = s_query.filter(database.Gallery.category_id == None)
             elif category.isdigit():
                 s_query = s_query.filter(database.Gallery.category_id == int(category))
-            
             s_query = s_query.distinct()
             
         for s in s_query.all():
@@ -262,13 +270,15 @@ def get_library(search: str = "", category: str = "all", filter_type: str = "all
             read_count = sum(1 for g in s.galleries if g.status == "Completed")
             any_progress = any(g.status != "New" for g in s.galleries)
             
-            # Derived Category
+            # INHERITANCE
             cat_name = get_series_category_name(s) or "Series"
+            art_name = get_series_artist_name(s)
 
             items.append({
-                "type": "series", "id": s.id, "title": s.name, "artist": s.artist or "Various",
+                "type": "series", "id": s.id, "title": s.name, 
+                "artist": art_name, # Inherited Artist
                 "status": f"{len(s.galleries)} Items", 
-                "category": cat_name, # Inherited name
+                "category": cat_name, 
                 "thumb": get_series_cover(s), "count": len(s.galleries), "read_count": read_count,
                 "is_new": not any_progress, "series": s.name, "tags": sorted(list(set(child_tags))),
                 "description": s.description or "", "created_at": s.id
@@ -287,13 +297,14 @@ def view_series_page(series_id: int, request: Request, db: Session = Depends(get
     for g in galleries:
         for t in g.tags: display_tags.append(t.name)
         
-    # Calculate inherited category for display
     series_category = get_series_category_name(series)
+    series_artist = get_series_artist_name(series)
     
     return templates.TemplateResponse("series.html", {
         "request": request, "series": series, "galleries": galleries,
         "cover_url": get_series_cover(series), "display_tags": sorted(list(set(display_tags))),
-        "series_category": series_category # Pass derived category
+        "series_category": series_category,
+        "series_artist": series_artist
     })
 
 @app.get("/reader/{gallery_id}", response_class=HTMLResponse)
@@ -371,13 +382,11 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
     if not gallery: raise HTTPException(404, "Gallery not found")
     
-    # 1. Update basic fields
     gallery.title = request.title # type: ignore
     gallery.artist = request.artist # type: ignore
     gallery.description = request.description # type: ignore
     if request.direction: gallery.reading_direction = request.direction # type: ignore
     
-    # 2. Handle Series Link
     if request.series:
         s = db.query(database.Series).filter(database.Series.name == request.series).first()
         if not s:
@@ -388,7 +397,6 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.series_id = None # type: ignore
 
-    # 3. Handle Category
     if request.category:
         c = db.query(database.Category).filter(database.Category.name == request.category).first()
         if not c:
@@ -399,7 +407,6 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     else:
         gallery.category_id = None # type: ignore
 
-    # 4. Handle Tags
     gallery.tags.clear()
     for t_name in request.tags:
         t_name = t_name.strip()
@@ -410,8 +417,6 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
             db.add(t)
         gallery.tags.append(t)
         
-    # 5. MOVE FILE ON DISK
-    # Now that artist/series are updated, we check if the file needs to move
     new_artist = gallery.artist
     new_series = request.series if request.series else None
     move_gallery_file(gallery, new_artist, new_series)
@@ -426,11 +431,11 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
     
     if "name" in payload: s.name = payload["name"]
     if "thumbnail_url" in payload: s.thumbnail_url = payload["thumbnail_url"]
-    if "artist" in payload: s.artist = payload["artist"]
+    
+    # REMOVED: Artist manual update. Now inherited.
+    
     if "description" in payload: s.description = payload["description"]
     
-    # REMOVED: Category manual update logic. Series now inherit category from children.
-
     if "tags" in payload:
         s.tags.clear()
         for t_name in payload["tags"]:
@@ -447,7 +452,9 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
             g = db.query(database.Gallery).filter(database.Gallery.id == g_id).first()
             if g and g.series_id == s.id: g.sort_order = idx + 1 # type: ignore
 
-    if "name" in payload or "artist" in payload:
+    # BATCH MOVE FILES (If Series Name changed)
+    # Note: We rely on the galleries' own artist for the path, so we don't change that here.
+    if "name" in payload:
         new_series_name = s.name
         for g in s.galleries:
             move_gallery_file(g, g.artist, new_series_name)
@@ -486,7 +493,6 @@ def delete_gallery(gallery_id: int, db: Session = Depends(get_db)):
     db.delete(gallery)
     db.commit()
 
-    # Check if Series is Empty
     series_deleted = False
     if series_id: # type: ignore
         count = db.query(database.Gallery).filter(database.Gallery.series_id == series_id).count()
