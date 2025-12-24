@@ -11,6 +11,11 @@
         <div class="header-info">
             <a href="/" class="back-link">&larr; Back to Library</a>
             <h1>{{ series.name }}</h1>
+            
+            {% if series_artist and series_artist != "Unknown" %}
+            <div style="color: var(--accent); font-weight: bold; margin-bottom: 5px;">{{ series_artist }}</div>
+            {% endif %}
+            
             {% if series.description %}
             <p class="series-desc">{{ series.description }}</p>
             {% endif %}

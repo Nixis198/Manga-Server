@@ -48,7 +48,7 @@
             <input type="text" id="edit_title" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
         </div>
         
-        <div style="margin-bottom:10px;">
+        <div style="margin-bottom:10px;" id="div-edit-artist">
             <label style="display:block; color:#aaa; font-size:0.8rem;">Artist</label>
             <input type="text" id="edit_artist" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
         </div>
@@ -316,7 +316,7 @@
         }
     }
 
-    // --- RENDER GRID ---
+    // --- RENDER GRID (Updated to include Data Attributes for Context Menu) ---
     function renderGrid(items) {
         const grid = document.getElementById('library-grid');
         grid.innerHTML = '';
@@ -349,7 +349,7 @@
             if(isSeries) card.classList.add('series-card'); // Helper class
             card.onclick = () => window.location.href = href;
 
-            // Add Data Attributes
+            // --- CRITICAL: Add Data Attributes for Context Menu ---
             card.dataset.id = item.id;
             card.dataset.title = item.title;
             card.dataset.artist = item.artist || '';
@@ -365,7 +365,7 @@
                     <div class="card-title" title="${item.title}">${item.title}</div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
                         <div class="card-artist" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px;">
-                            ${isSeries ? 'Series' : (item.artist || 'Unknown')}
+                            ${isSeries ? (item.artist || 'Various') : (item.artist || 'Unknown')}
                         </div>
                         <div style="display: flex; gap: 4px; flex-shrink: 0;">${badgesHtml}</div>
                     </div>
@@ -466,14 +466,17 @@
         // Toggle Inputs based on Type
         const seriesDiv = document.getElementById('div-edit-series');
         const catDiv = document.getElementById('div-edit-category');
+        const artDiv = document.getElementById('div-edit-artist');
         
         if (selectedItem.type === 'series') {
             seriesDiv.style.display = 'none'; 
-            catDiv.style.display = 'none';  // <--- HIDE CATEGORY FOR SERIES
+            catDiv.style.display = 'none';  // HIDE CATEGORY
+            artDiv.style.display = 'none';  // HIDE ARTIST
             document.getElementById('modal-title').innerText = "Edit Series Metadata";
         } else {
             seriesDiv.style.display = 'block';
             catDiv.style.display = 'block';
+            artDiv.style.display = 'block';
             document.getElementById('modal-title').innerText = "Edit Gallery Metadata";
             document.getElementById('edit_series_name').value = selectedItem.dataset.series || ""; 
         }
@@ -499,8 +502,8 @@
         };
         
         if (type === 'series') {
-            payload.name = payload.title; // Series uses 'name'
-            // We do NOT send category for series updates anymore
+            payload.name = payload.title; 
+            // We do NOT send category or artist for series updates
             await fetch(`/api/series/${id}/update`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
