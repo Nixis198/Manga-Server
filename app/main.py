@@ -224,7 +224,7 @@ def get_library(
     search: str = "", 
     category: str = "all", 
     filter_type: str = "all", 
-    sort: str = "title_asc",  # Added sort parameter
+    sort: str = "title_asc",
     db: Session = Depends(get_db)
 ):
     items = []
@@ -266,11 +266,14 @@ def get_library(
             
             child_tags = []
             child_titles = []
+            child_artists = []
+            
             for g in s.galleries:
                 child_titles.append(g.title)
+                if g.artist: child_artists.append(g.artist)
                 for t in g.tags: child_tags.append(t.name)
             
-            search_blob = build_search_string(s.name, s.artist, child_titles + child_tags)
+            search_blob = build_search_string(s.name, s.artist, child_titles + child_tags + child_artists)
             if search and search not in search_blob: continue
 
             read_count = sum(1 for g in s.galleries if g.status == "Completed")
@@ -282,7 +285,7 @@ def get_library(
 
             items.append({
                 "type": "series", "id": s.id, "title": s.name, 
-                "artist": art_name, # Inherited Artist
+                "artist": art_name,
                 "status": f"{len(s.galleries)} Items", 
                 "category": cat_name, 
                 "thumb": get_series_cover(s), "count": len(s.galleries), "read_count": read_count,
@@ -326,7 +329,7 @@ def view_series_page(series_id: int, request: Request, db: Session = Depends(get
 def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)):
     gallery = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
     if not gallery: raise HTTPException(404, "Gallery not found")
-    if gallery.status == "New":  # type: ignore
+    if gallery.status == "New": # type: ignore
         gallery.status = "Reading" # type: ignore
         db.commit()
     return templates.TemplateResponse("reader.html", {"request": request, "gallery": gallery})
@@ -475,7 +478,7 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
             g = db.query(database.Gallery).filter(database.Gallery.id == g_id).first()
             if g and g.series_id == s.id: g.sort_order = idx + 1 # type: ignore
 
-    # BATCH MOVE FILES (If Series Name changed)
+    # 5. BATCH MOVE FILES (If Series Name changed)
     if "name" in payload:
         new_series_name = s.name
         for g in s.galleries:
