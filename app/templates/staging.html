@@ -325,7 +325,7 @@
     async function loadFiles() {
         const res = await fetch('/api/staged');
         stagedFiles = await res.json();
-        stagedFiles.sort((a, b) => a.filename.localeCompare(b.filename));
+        stagedFiles.sort((a, b) => a.filename.localeCompare(b.filename));    
         renderList();
     }
 
@@ -392,7 +392,7 @@
                 const innerName = peekData.filename;
                 
                 if (innerName) {
-                    const innerMatch = innerName.match(/^\[(?:.*?\((.*?)\)|(.*?))\]\s*(.*?)\s*-\s*\d+/);
+                    const innerMatch = innerName.match(/^\[(?:.*?\((.*?)\)|(.*?))\]\s*(.*?)\s*-\s*p?\d+/);
                     if (innerMatch) {
                         artist = innerMatch[1] || innerMatch[2]; 
                         title = innerMatch[3];
