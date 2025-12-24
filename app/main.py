@@ -683,17 +683,31 @@ async def upload_gallery_api(file: UploadFile = File(...)):
 
 @app.get("/api/backup")
 def backup_db(db: Session = Depends(get_db)):
-    data = {"categories": [], "series": [], "tags": [], "galleries": [], "settings": []}
+    data = {"categories": [], "series": [], "tags": [], "galleries": [], "settings": [], "plugin_configs": []}
+    
     for c in db.query(database.Category).all(): data["categories"].append({"id":c.id, "name":c.name})
-    for s in db.query(database.Series).all(): data["series"].append({"id":s.id, "name":s.name, "description":s.description})
+    for s in db.query(database.Series).all(): 
+        data["series"].append({
+            "id": s.id, 
+            "name": s.name, 
+            "description": s.description,
+            "thumbnail_url": s.thumbnail_url 
+        })
     for t in db.query(database.Tag).all(): data["tags"].append({"id":t.id, "name":t.name})
     for st in db.query(database.Settings).all(): data["settings"].append({"key":st.key, "value":st.value})
+    
+    # Export Plugin Configs
+    for pc in db.query(database.PluginConfig).all():
+        data["plugin_configs"].append({"plugin_id": pc.plugin_id, "key": pc.key, "value": pc.value})
+
     for g in db.query(database.Gallery).all():
         data["galleries"].append({
             "id": g.id, "filename": g.filename, "path": g.path, "title": g.title, "artist": g.artist,
             "status": g.status, "pages_read": g.pages_read, "pages_total": g.pages_total,
             "reading_direction": g.reading_direction, "series_id": g.series_id, "category_id": g.category_id,
-            "description": g.description, "tag_names": [t.name for t in g.tags]
+            "description": g.description, 
+            "sort_order": g.sort_order,
+            "tag_names": [t.name for t in g.tags]
         })
     return data
 
@@ -701,28 +715,47 @@ def backup_db(db: Session = Depends(get_db)):
 async def restore_db(file: UploadFile = File(...), db: Session = Depends(get_db)):
     content = await file.read()
     data = json.loads(content)
+    
+    # Clear Existing
     db.query(database.gallery_tags).delete()
     db.query(database.Gallery).delete()
     db.query(database.Series).delete()
     db.query(database.Category).delete()
     db.query(database.Tag).delete()
     db.query(database.Settings).delete()
+    db.query(database.PluginConfig).delete()
     db.commit()
+    
+    # Restore Basic Tables
     for c in data.get("categories", []): db.add(database.Category(id=c["id"], name=c["name"]))
-    for s in data.get("series", []): db.add(database.Series(id=s["id"], name=s["name"], description=s.get("description")))
+    for s in data.get("series", []): 
+        db.add(database.Series(
+            id=s["id"], 
+            name=s["name"], 
+            description=s.get("description"),
+            thumbnail_url=s.get("thumbnail_url")
+        ))
     tag_map = {}
     for t in data.get("tags", []): 
         new_tag = database.Tag(id=t["id"], name=t["name"])
         db.add(new_tag)
         tag_map[t["name"]] = new_tag
     for st in data.get("settings", []): db.add(database.Settings(key=st["key"], value=st["value"]))
+    
+    # Restore Plugins
+    for pc in data.get("plugin_configs", []):
+        db.add(database.PluginConfig(plugin_id=pc["plugin_id"], key=pc["key"], value=pc["value"]))
+        
     db.commit()
+    
+    # Restore Galleries
     for g in data.get("galleries", []):
         gal = database.Gallery(
             id=g["id"], filename=g["filename"], path=g["path"], title=g["title"], artist=g["artist"],
             status=g["status"], pages_read=g.get("pages_read",0), pages_total=g.get("pages_total",0),
             reading_direction=g.get("reading_direction","LTR"), series_id=g["series_id"], category_id=g["category_id"],
-            description=g.get("description")
+            description=g.get("description"),
+            sort_order=g.get("sort_order", 0)
         )
         for tn in g.get("tag_names", []):
             if tn in tag_map: gal.tags.append(tag_map[tn])
