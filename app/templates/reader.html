@@ -186,6 +186,7 @@
     data-direction="{{ gallery.reading_direction }}"
     data-total-pages="{{ gallery.pages_total if gallery.pages_total else 999 }}"
     data-current-page="{{ gallery.pages_read }}"
+    data-preload-count="{{ preload_count }}"
 >
 
     <header>
@@ -231,6 +232,8 @@
         const data = document.body.dataset;
         const GALLERY_ID = parseInt(data.galleryId);
         const DIRECTION = data.direction; 
+        const PRELOAD_COUNT = parseInt(data.preloadCount) || 2; // Default to 2 if missing
+        
         let totalPages = parseInt(data.totalPages) || 1;
         
         // RESUME LOGIC
@@ -244,45 +247,36 @@
         let currentPage = startPage;
 
         // --- ALWAYS AUTO DETECT ON LOAD ---
-        // 1. Force detection every time page loads (no localStorage)
         let defaultFit = 'height';
-        
-        // If screen is Taller than it is Wide (Portrait/Phone) -> Fit Width
         if (window.innerHeight > window.innerWidth) {
             defaultFit = 'width'; 
         } else {
             defaultFit = 'height';
         }
-
-        // Set the dropdown
         document.getElementById('fit-mode').value = defaultFit;
 
         function applySettings() {
             const fit = document.getElementById('fit-mode').value;
             const img = document.getElementById('page-img');
             
-            // RESET ALL CONSTRAINTS
             img.style.width = '';
             img.style.height = '';
             img.style.maxWidth = '';
             img.style.maxHeight = '';
 
             if (fit === 'width') {
-                // FORCE WIDTH, UNCAP HEIGHT (Allow Scrolling)
                 img.style.width = '100%';
-                img.style.height = 'auto'; // Maintain aspect ratio
-                img.style.maxWidth = 'none'; // Allow growing beyond container
-                img.style.maxHeight = 'none'; // CRITICAL: Allow growing taller than screen
+                img.style.height = 'auto';
+                img.style.maxWidth = 'none';
+                img.style.maxHeight = 'none';
             } 
             else if (fit === 'height') {
-                // FORCE HEIGHT, UNCAP WIDTH (Center with black bars)
                 img.style.height = '100%';
-                img.style.width = 'auto'; // Maintain aspect ratio
-                img.style.maxHeight = '100%'; // Cap at screen height
-                img.style.maxWidth = 'none'; // Allow growing wider if needed (rare)
+                img.style.width = 'auto';
+                img.style.maxHeight = '100%';
+                img.style.maxWidth = 'none';
             } 
             else {
-                // ORIGINAL
                 img.style.width = 'auto';
                 img.style.height = 'auto';
                 img.style.maxWidth = 'none';
@@ -351,9 +345,25 @@
             // Reset scroll on page turn
             document.getElementById('viewer').scrollTop = 0;
 
+            // Trigger Preloader
+            preloadNextPages();
+
             try {
                 await fetch(`/api/progress/${GALLERY_ID}/${currentPage}`, { method: 'POST' });
             } catch (e) { console.error("Failed to save progress", e); }
+        }
+
+        // --- PRELOADER FUNCTION ---
+        function preloadNextPages() {
+            if (PRELOAD_COUNT <= 0) return;
+            
+            for (let i = 1; i <= PRELOAD_COUNT; i++) {
+                let nextP = currentPage + i;
+                if (nextP <= totalPages) {
+                    const tempImg = new Image();
+                    tempImg.src = `/api/read/${GALLERY_ID}/${nextP}`;
+                }
+            }
         }
 
         // NAVIGATION LOGIC

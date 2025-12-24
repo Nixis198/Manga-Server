@@ -333,7 +333,16 @@ def open_reader(gallery_id: int, request: Request, db: Session = Depends(get_db)
     if gallery.status == "New": # type: ignore
         gallery.status = "Reading" # type: ignore
         db.commit()
-    return templates.TemplateResponse("reader.html", {"request": request, "gallery": gallery})
+    
+    # FETCH PRELOAD SETTING
+    s = db.query(database.Settings).filter(database.Settings.key == "preload_pages").first()
+    preload_count = int(s.value) if s else 2 # type: ignore
+    
+    return templates.TemplateResponse("reader.html", {
+        "request": request, 
+        "gallery": gallery,
+        "preload_count": preload_count 
+    })
 
 @app.get("/staging", response_class=HTMLResponse)
 def read_staging(request: Request): return templates.TemplateResponse("staging.html", {"request": request})
@@ -453,14 +462,8 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
     s = db.query(database.Series).filter(database.Series.id == series_id).first()
     if not s: raise HTTPException(404, "Series not found")
     
-    # Track changes for file moving
-    old_name = s.name
-    
     if "name" in payload: s.name = payload["name"]
     if "thumbnail_url" in payload: s.thumbnail_url = payload["thumbnail_url"]
-    
-    # REMOVED: Artist manual update. Now inherited.
-    
     if "description" in payload: s.description = payload["description"]
     
     if "tags" in payload:
@@ -479,7 +482,7 @@ def update_series_metadata(series_id: int, payload: dict, db: Session = Depends(
             g = db.query(database.Gallery).filter(database.Gallery.id == g_id).first()
             if g and g.series_id == s.id: g.sort_order = idx + 1 # type: ignore
 
-    # 5. BATCH MOVE FILES (If Series Name changed)
+    # 5. BATCH MOVE FILES
     if "name" in payload:
         new_series_name = s.name
         for g in s.galleries:
@@ -650,6 +653,7 @@ def get_settings_api(db: Session = Depends(get_db)):
     if "server_name" not in s_dict: s_dict["server_name"] = "Manga Server" # type: ignore
     if "auto_backup_enabled" not in s_dict: s_dict["auto_backup_enabled"] = "false" # type: ignore
     if "auto_backup_frequency" not in s_dict: s_dict["auto_backup_frequency"] = "7" # type: ignore
+    if "preload_pages" not in s_dict: s_dict["preload_pages"] = "2" # type: ignore
     return s_dict
 
 @app.post("/api/settings")

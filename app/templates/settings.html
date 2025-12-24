@@ -31,6 +31,12 @@
                             </select>
                         </div>
 
+                        <div class="form-group">
+                            <label>Image Preloading (Pages)</label>
+                            <input type="number" id="set_preload" min="0" max="10" placeholder="2">
+                            <div style="font-size: 0.75rem; color: #666; margin-top: 3px;">Preload next pages in reader. Higher = snappier but uses more bandwidth.</div>
+                        </div>
+
                         <div class="form-group row-group">
                             <input type="checkbox" id="set_show_uncategorized" style="width: auto; margin: 0;">
                             <label for="set_show_uncategorized" style="margin: 0; cursor: pointer;">Show "Uncategorized" Filter</label>
@@ -291,7 +297,7 @@
         border: 1px solid #333;
     }
     
-    select, input[type="text"] {
+    select, input[type="text"], input[type="number"] {
         width: 100%; padding: 8px;
         background: #111; border: 1px solid #444; color: white; border-radius: 4px;
         box-sizing: border-box; /* Fix for resizing */
@@ -361,6 +367,10 @@
         if (data.default_direction) document.getElementById('set_direction').value = data.default_direction;
         if (data.show_uncategorized === "true") document.getElementById('set_show_uncategorized').checked = true;
         if (data.server_name) document.getElementById('set_server_name').value = data.server_name;
+        
+        // ADDED: Load Preload Setting
+        document.getElementById('set_preload').value = data.preload_pages || 2;
+
         // Load Backup Settings
         const bkEnabled = data.auto_backup_enabled === "true";
         document.getElementById('bk_enabled').checked = bkEnabled;
@@ -374,7 +384,9 @@
         const payload = {
             default_direction: document.getElementById('set_direction').value,
             show_uncategorized: document.getElementById('set_show_uncategorized').checked ? "true" : "false",
-            server_name: document.getElementById('set_server_name').value
+            server_name: document.getElementById('set_server_name').value,
+            // ADDED: Save Preload Setting
+            preload_pages: document.getElementById('set_preload').value
         };
         const res = await fetch('/api/settings', {
             method: 'POST',
