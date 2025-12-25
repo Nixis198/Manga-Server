@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc # <--- Added these imports
+from sqlalchemy import func, desc
 
 # Import our local modules
 from . import database, schemas
@@ -336,6 +336,7 @@ def get_library(
                 for t in g.tags: child_tags.append(t.name)
             
             search_blob = build_search_string(s.name, s.artist, child_titles + child_tags + child_artists)
+            
             if search and search not in search_blob: continue
 
             read_count = sum(1 for g in s.galleries if g.status == "Completed")
@@ -847,6 +848,37 @@ def mark_series_read(series_id: int, db: Session = Depends(get_db)):
         if g.pages_total: g.pages_read = g.pages_total
     db.commit()
     return {"status": "success"}
+
+# --- NEW CLEANUP ENDPOINT ---
+@app.post("/api/cleanup")
+def cleanup_database_api(db: Session = Depends(get_db)):
+    try:
+        # 1. Remove "Ghost" Tags (name is empty string)
+        empty_tags = db.query(database.Tag).filter(database.Tag.name == "").all()
+        count_empty = len(empty_tags)
+        for t in empty_tags:
+            db.delete(t)
+            
+        # 2. Remove Unused Tags (no galleries associated)
+        unused_tags = db.query(database.Tag).filter(~database.Tag.galleries.any()).all()
+        count_unused = len(unused_tags)
+        for t in unused_tags:
+            db.delete(t)
+            
+        # 3. Remove Empty Series (no galleries associated)
+        empty_series = db.query(database.Series).filter(~database.Series.galleries.any()).all()
+        count_series = len(empty_series)
+        for s in empty_series:
+            db.delete(s)
+            
+        db.commit()
+        
+        msg = f"Cleanup complete.\nRemoved {count_empty} ghost tags.\nRemoved {count_unused} unused tags.\nRemoved {count_series} empty series."
+        return {"status": "success", "message": msg}
+        
+    except Exception as e:
+        logger.error(f"Cleanup failed: {e}")
+        raise HTTPException(500, f"Cleanup failed: {e}")
 
 @app.get("/api/system/info")
 def get_system_info():
