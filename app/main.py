@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import func, desc # <--- Added these imports
 
 # Import our local modules
 from . import database, schemas
@@ -219,6 +220,66 @@ def update_template_globals():
 @app.get("/", response_class=HTMLResponse)
 def read_root(request: Request):
     return templates.TemplateResponse("library.html", {"request": request})
+
+# --- ADDED STATS PAGES ---
+@app.get("/stats", response_class=HTMLResponse)
+def stats_page(request: Request):
+    return templates.TemplateResponse("stats.html", {"request": request})
+
+@app.get("/api/stats")
+def get_stats_data(db: Session = Depends(get_db)):
+    # 1. Basic Counts
+    total_gals = db.query(database.Gallery).count()
+    total_series = db.query(database.Series).count()
+    total_artists = db.query(database.Gallery.artist).distinct().count()
+    
+    # 2. Page Progress
+    pages_total = db.query(func.sum(database.Gallery.pages_total)).scalar() or 0
+    pages_read = db.query(func.sum(database.Gallery.pages_read)).scalar() or 0
+    global_prog = int((pages_read / pages_total * 100) if pages_total > 0 else 0)
+
+    # 3. Status Distribution
+    status_counts = db.query(database.Gallery.status, func.count(database.Gallery.id)).group_by(database.Gallery.status).all()
+    status_map = {s: c for s, c in status_counts}
+
+    # 4. Category Distribution
+    cat_counts = db.query(database.Category.name, func.count(database.Gallery.id))\
+                   .outerjoin(database.Category, database.Gallery.category_id == database.Category.id)\
+                   .group_by(database.Category.name).all()
+    
+    cat_map = {}
+    for name, count in cat_counts:
+        cat_map[name if name else "Uncategorized"] = count
+
+    # 5. Top Artists (Top 10)
+    artists = db.query(database.Gallery.artist, func.count(database.Gallery.id))\
+                .filter(database.Gallery.artist != None, database.Gallery.artist != "")\
+                .group_by(database.Gallery.artist)\
+                .order_by(desc(func.count(database.Gallery.id)))\
+                .limit(10).all()
+    
+    top_artists = [{"name": a, "count": c} for a, c in artists]
+
+    # 6. Top Tags (Top 10)
+    tags = db.query(database.Tag.name, func.count(database.gallery_tags.c.gallery_id))\
+             .join(database.gallery_tags)\
+             .group_by(database.Tag.id)\
+             .order_by(desc(func.count(database.gallery_tags.c.gallery_id)))\
+             .limit(10).all()
+             
+    top_tags = [{"name": t, "count": c} for t, c in tags]
+
+    return {
+        "total_galleries": total_gals,
+        "total_series": total_series,
+        "total_artists": total_artists,
+        "total_pages": pages_total,
+        "global_progress": global_prog,
+        "status_distribution": status_map,
+        "category_distribution": cat_map,
+        "top_artists": top_artists,
+        "top_tags": top_tags
+    }
 
 @app.get("/api/library")
 def get_library(

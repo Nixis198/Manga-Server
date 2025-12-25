@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Statistics{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div class="stats-container">
+    <h1 style="margin-bottom: 20px;">Library Statistics</h1>
+
+    <div class="stats-grid-top">
+        <div class="stat-card">
+            <div class="stat-value" id="val_galleries">-</div>
+            <div class="stat-label">Total Galleries</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="val_series">-</div>
+            <div class="stat-label">Total Series</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="val_artists">-</div>
+            <div class="stat-label">Unique Artists</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="val_pages">-</div>
+            <div class="stat-label">Total Pages</div>
+        </div>
+    </div>
+
+    <div class="stats-grid-mid">
+        
+        <div class="chart-card">
+            <h3>Reading Status</h3>
+            <div class="chart-wrapper">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card" style="display:flex; flex-direction:column; justify-content:center;">
+            <h3>Global Completion</h3>
+            <div style="text-align:center; margin: 20px 0;">
+                <div style="font-size: 3rem; font-weight:bold; color: var(--accent);" id="val_percent">0%</div>
+                <div style="color:#888;">of all pages read</div>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" id="progress_bar" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h3>Categories</h3>
+            <div class="chart-wrapper">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-grid-bot">
+        
+        <div class="list-card">
+            <h3>Top 10 Artists</h3>
+            <table class="stat-table">
+                <tbody id="list_artists"></tbody>
+            </table>
+        </div>
+
+        <div class="list-card">
+            <h3>Top 10 Tags</h3>
+            <div id="list_tags" class="tag-cloud"></div>
+        </div>
+
+    </div>
+
+</div>
+
+<style>
+    .stats-container { padding: 20px; max-width: 1200px; margin: 0 auto; }
+    
+    /* GRIDS */
+    .stats-grid-top {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .stats-grid-mid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+
+    .stats-grid-bot {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 20px;
+    }
+
+    /* CARDS */
+    .stat-card, .chart-card, .list-card {
+        background: #252525;
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 20px;
+        box-sizing: border-box; /* Ensures width calculations are consistent */
+        width: 100%;
+    }
+
+    /* TOP STATS */
+    .stat-card { text-align: center; }
+    .stat-value { font-size: 2.5rem; font-weight: bold; color: white; margin-bottom: 5px; }
+    .stat-label { color: #aaa; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; }
+
+    /* CHARTS */
+    .chart-wrapper { position: relative; height: 250px; width: 100%; }
+    
+    /* PROGRESS BAR */
+    .progress-track {
+        background: #333;
+        height: 20px;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .progress-fill {
+        background: var(--accent, #3498db);
+        height: 100%;
+        transition: width 1s ease-out;
+    }
+
+    /* LISTS */
+    .stat-table { width: 100%; border-collapse: collapse; }
+    .stat-table td { padding: 8px 0; border-bottom: 1px solid #333; color: #ccc; }
+    .stat-table tr:last-child td { border-bottom: none; }
+    .stat-table td:last-child { text-align: right; font-weight: bold; color: white; }
+
+    .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-pill {
+        background: #333;
+        padding: 5px 12px;
+        border-radius: 15px;
+        font-size: 0.9rem;
+        color: #ddd;
+    }
+    .tag-count { color: #888; font-size: 0.8rem; margin-left: 5px; }
+
+    /* --- MOBILE OPTIMIZATION --- */
+    @media (max-width: 768px) {
+        .stats-container { padding: 10px; }
+
+        /* Top Grid: Force 2 columns (2x2) with consistent spacing */
+        .stats-grid-top {
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .stat-card { padding: 15px 5px; }
+        .stat-value { font-size: 1.8rem; }
+        .stat-label { font-size: 0.7rem; }
+
+        /* Mid & Bot Grids: Force 1 column with consistent spacing */
+        .stats-grid-mid, .stats-grid-bot {
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .chart-wrapper { height: 220px; } 
+        
+        /* Ensure charts don't overflow the flex container */
+        .chart-card {
+            min-width: 0; 
+        }
+    }
+</style>
+
+<script>
+    async function loadStats() {
+        try {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+
+            // 1. Big Numbers
+            document.getElementById('val_galleries').innerText = data.total_galleries.toLocaleString();
+            document.getElementById('val_series').innerText = data.total_series.toLocaleString();
+            document.getElementById('val_artists').innerText = data.total_artists.toLocaleString();
+            document.getElementById('val_pages').innerText = data.total_pages.toLocaleString();
+
+            // 2. Progress
+            document.getElementById('val_percent').innerText = data.global_progress + "%";
+            document.getElementById('progress_bar').style.width = data.global_progress + "%";
+
+            // 3. Status Chart
+            new Chart(document.getElementById('statusChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['New', 'Reading', 'Completed'],
+                    datasets: [{
+                        data: [
+                            data.status_distribution.New || 0,
+                            data.status_distribution.Reading || 0,
+                            data.status_distribution.Completed || 0
+                        ],
+                        backgroundColor: ['#e74c3c', '#f39c12', '#2ecc71'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right', labels: { color: '#ccc' } } } 
+                }
+            });
+
+            // 4. Category Chart
+            const catLabels = Object.keys(data.category_distribution);
+            const catValues = Object.values(data.category_distribution);
+            new Chart(document.getElementById('categoryChart'), {
+                type: 'pie',
+                data: {
+                    labels: catLabels,
+                    datasets: [{
+                        data: catValues,
+                        backgroundColor: ['#3498db', '#9b59b6', '#1abc9c', '#34495e', '#e67e22'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right', labels: { color: '#ccc' } } } 
+                }
+            });
+
+            // 5. Top Artists
+            const artistList = document.getElementById('list_artists');
+            data.top_artists.forEach(a => {
+                artistList.innerHTML += `<tr><td>${a.name}</td><td>${a.count}</td></tr>`;
+            });
+
+            // 6. Top Tags
+            const tagList = document.getElementById('list_tags');
+            data.top_tags.forEach(t => {
+                tagList.innerHTML += `<div class="tag-pill">${t.name} <span class="tag-count">${t.count}</span></div>`;
+            });
+
+        } catch(e) { console.error(e); }
+    }
+
+    loadStats();
+</script>
+{% endblock %}
