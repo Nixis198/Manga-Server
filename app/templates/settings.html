@@ -84,6 +84,10 @@
                             Restore Backup
                         </button>
                     </div>
+
+                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+                        <button onclick="cleanDatabase()" class="btn-small" style="width:100%; background: #e74c3c;">Clean Database (Remove Unused Tags/Series)</button>
+                    </div>
                 </div>
             </div>
 
@@ -511,6 +515,21 @@
             body: JSON.stringify(payload)
         });
         if (res.ok) alert("Backup Settings Saved!");
+    }
+
+    async function cleanDatabase() {
+        if (!confirm("This will remove:\n- Empty tags (\"\")\n- Unused tags (0 galleries)\n- Empty series (0 books)\n\nProceed?")) return;
+        
+        try {
+            const res = await fetch('/api/cleanup', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                alert(data.message);
+                location.reload(); // Refresh to update lists
+            } else {
+                alert("Error: " + data.detail);
+            }
+        } catch (e) { alert("Cleanup failed: " + e); }
     }
 
     // INIT
