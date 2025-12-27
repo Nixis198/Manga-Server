@@ -79,7 +79,8 @@ def import_gallery(db: Session, staged_id: int, meta: ImportRequest, data_dir: s
         category_id=category_id,
         status="New",
         pages_total=0,
-        sort_order=0
+        sort_order=0,
+        source_url=meta.source_url
     )
     
     # 5. Handle Tags

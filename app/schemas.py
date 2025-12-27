@@ -9,3 +9,4 @@ class ImportRequest(BaseModel):
     series: Optional[str] = None
     category: Optional[str] = None
     tags: List[str] = []
+    source_url: Optional[str] = None

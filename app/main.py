@@ -307,7 +307,8 @@ def get_library(
                 "type": "gallery", "id": g.id, "title": g.title, "artist": g.artist,
                 "status": g.status, "pages_read": g.pages_read, "pages_total": g.pages_total,
                 "category": g.category.name if g.category else "", "thumb": f"/thumbnails/{g.id}.jpg",
-                "series": "", "tags": [t.name for t in g.tags], "description": g.description or "", "created_at": g.id 
+                "series": "", "tags": [t.name for t in g.tags], "description": g.description or "", "created_at": g.id,
+                "source_url": g.source_url or ""
             })
 
     # 2. SERIES
@@ -748,6 +749,12 @@ async def upload_gallery_api(file: UploadFile = File(...)):
     with open(loc, "wb+") as f: shutil.copyfileobj(file.file, f)
     return {"filename": file.filename, "status": "success"}
 
+@app.get("/api/gallery/{gallery_id}/source")
+def get_gallery_source_url(gallery_id: int, db: Session = Depends(get_db)):
+    g = db.query(database.Gallery).filter(database.Gallery.id == gallery_id).first()
+    if not g: raise HTTPException(404, "Gallery not found")
+    return {"source_url": g.source_url if hasattr(g, "source_url") else None}
+
 @app.get("/api/backup")
 def backup_db(db: Session = Depends(get_db)):
     data = {"categories": [], "series": [], "tags": [], "galleries": [], "settings": [], "plugin_configs": []}
@@ -774,6 +781,7 @@ def backup_db(db: Session = Depends(get_db)):
             "reading_direction": g.reading_direction, "series_id": g.series_id, "category_id": g.category_id,
             "description": g.description, 
             "sort_order": g.sort_order,
+            "source_url": g.source_url if hasattr(g, "source_url") else None,
             "tag_names": [t.name for t in g.tags]
         })
     return data
@@ -822,7 +830,8 @@ async def restore_db(file: UploadFile = File(...), db: Session = Depends(get_db)
             status=g["status"], pages_read=g.get("pages_read",0), pages_total=g.get("pages_total",0),
             reading_direction=g.get("reading_direction","LTR"), series_id=g["series_id"], category_id=g["category_id"],
             description=g.get("description"),
-            sort_order=g.get("sort_order", 0)
+            sort_order=g.get("sort_order", 0),
+            source_url=g.get("source_url")
         )
         for tn in g.get("tag_names", []):
             if tn in tag_map: gal.tags.append(tag_map[tn])
