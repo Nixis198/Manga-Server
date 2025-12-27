@@ -477,6 +477,7 @@ def update_gallery_metadata(gallery_id: int, request: schemas.ImportRequest, db:
     gallery.title = request.title # type: ignore
     gallery.artist = request.artist # type: ignore
     gallery.description = request.description # type: ignore
+    gallery.source_url = request.source_url # type: ignore
     if request.direction: gallery.reading_direction = request.direction # type: ignore
     
     # 2. Handle Series Link
