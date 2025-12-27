@@ -84,6 +84,11 @@
             <label style="display:block; color:#aaa; font-size:0.8rem;">Description</label>
             <textarea id="edit_desc" rows="3" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;"></textarea>
         </div>
+
+        <div style="margin-bottom:10px;" id="div-edit-url">
+            <label style="display:block; color:#aaa; font-size:0.8rem;">Source URL</label>
+            <input type="text" id="edit_url" style="width:100%; padding:8px; background:#1a1a1a; border:1px solid #444; color:white;">
+        </div>
         
         <div style="text-align:right; margin-top:20px;">
             <button onclick="closeEditModal()" style="background:#555; color:white; border:none; padding:8px 15px; cursor:pointer; margin-right:10px;">Cancel</button>
@@ -366,6 +371,7 @@
             card.dataset.series = item.series || '';
             card.dataset.tags = (item.tags || []).join(', ');
             card.dataset.desc = item.description || '';
+            card.dataset.url = item.source_url || '';
             card.dataset.type = item.type; // 'gallery' or 'series'
             
             card.innerHTML = `
@@ -471,16 +477,20 @@
         document.getElementById('edit_category').value = selectedItem.dataset.category;
         document.getElementById('edit_tags').value = selectedItem.dataset.tags;
         document.getElementById('edit_desc').value = selectedItem.dataset.desc;
+        document.getElementById('edit_url').value = selectedItem.dataset.url;
 
         // Toggle Inputs based on Type
         const seriesDiv = document.getElementById('div-edit-series');
         const catDiv = document.getElementById('div-edit-category');
         const artDiv = document.getElementById('div-edit-artist');
+        const urlDiv = document.getElementById('div-edit-url');
         
         if (selectedItem.type === 'series') {
             seriesDiv.style.display = 'none'; 
             catDiv.style.display = 'none';  // HIDE CATEGORY
             artDiv.style.display = 'none';  // HIDE ARTIST
+            urlDiv.style.display = 'none';  // HIDE URL
+            
             document.getElementById('modal-title').innerText = "Edit Series Metadata";
         } else {
             seriesDiv.style.display = 'block';
@@ -507,6 +517,7 @@
             category: document.getElementById('edit_category').value,
             tags: document.getElementById('edit_tags').value.split(',').map(t=>t.trim()),
             description: document.getElementById('edit_desc').value,
+            source_url: document.getElementById('edit_url').value,
             direction: "LTR"
         };
         

@@ -70,9 +70,14 @@
                         <input type="text" id="inp_tags" placeholder="Comma, separated, tags" class="form-input">
                     </div>
 
-                    <div style="margin-top: 15px; margin-bottom: 20px;">
+                    <div style="margin-top: 15px;">
                         <label class="form-label">Description</label>
                         <textarea id="inp_desc" rows="3" class="form-input" style="font-size: 0.9rem;"></textarea>
+                    </div>
+
+                    <div style="margin-top: 15px; margin-bottom: 20px;">
+                        <label class="form-label">Source URL</label>
+                        <input type="text" id="inp_source_url" class="form-input" placeholder="https://...">
                     </div>
 
                     <div class="plugin-box">
@@ -421,6 +426,7 @@
         document.getElementById('inp_series').value = "";
         document.getElementById('inp_tags').value = "";
         document.getElementById('inp_desc').value = "";
+        document.getElementById('inp_source_url').value = "";
         document.getElementById('plugin_url').value = ""; 
 
         if (window.innerWidth > 768) {
@@ -484,6 +490,7 @@
             category: document.getElementById('inp_category').value,
             tags: document.getElementById('inp_tags').value.split(',').map(t=>t.trim()),
             description: document.getElementById('inp_desc').value,
+            source_url: document.getElementById('inp_source_url').value,
             direction: document.getElementById('inp_direction').value
         };
 
@@ -590,6 +597,8 @@
                 if(data.description) document.getElementById('inp_desc').value = data.description;
                 if(data.tags && Array.isArray(data.tags)) document.getElementById('inp_tags').value = data.tags.join(', ');
                 
+                document.getElementById('inp_source_url').value = url;
+
                 btn.style.backgroundColor = "#2ecc71";
                 btn.innerText = "✓";
                 setTimeout(() => { 
